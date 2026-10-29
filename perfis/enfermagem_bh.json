@@ -1,0 +1,68 @@
+{
+  "_nome_exibicao": "Enfermagem (Contagem / Betim / Grande BH)",
+  "versao_filtros": 3,
+  "termos_busca": [
+    "enfermeiro",
+    "enfermeira",
+    "técnico de enfermagem"
+  ],
+  "cidades": [
+    "Contagem, MG",
+    "Betim, MG",
+    "Belo Horizonte, MG",
+    "Ibirité, MG",
+    "Sarzedo, MG",
+    "Ribeirão das Neves, MG",
+    "Santa Luzia, MG",
+    "Sabará, MG",
+    "Nova Lima, MG",
+    "Vespasiano, MG",
+    "Igarapé, MG",
+    "São Joaquim de Bicas, MG",
+    "Mário Campos, MG",
+    "Esmeraldas, MG",
+    "Lagoa Santa, MG"
+  ],
+  "alcance_km": 40,
+  "aceitar_home_office_todo_brasil": false,
+  "termos_home_office": [
+    "home office",
+    "homeoffice",
+    "home-office",
+    "remoto",
+    "remote",
+    "trabalho a distancia"
+  ],
+  "termos_fortes": [
+    "enfermag",
+    "enfermeir",
+    "coren",
+    "tecnico em enfermagem",
+    "tecnica em enfermagem",
+    "assistencial"
+  ],
+  "termos_fracos": [
+    "paciente",
+    "hospital",
+    "upa",
+    "unidade basica de saude",
+    "clinica",
+    "ambulatorio",
+    "saude"
+  ],
+  "exigir_termo_forte": true,
+  "minimo_de_termos": 1,
+  "termos_proibidos_titulo": [
+    "estagi",
+    "aprendiz",
+    "trainee"
+  ],
+  "termos_proibidos": [],
+  "dias": 7,
+  "sites": [
+    "indeed",
+    "linkedin",
+    "glassdoor"
+  ],
+  "resultados_por_busca": 40
+}

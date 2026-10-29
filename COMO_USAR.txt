@@ -1,0 +1,131 @@
+BUSCA DE VAGAS - COMO USAR
+===========================
+
+Esta pasta tem DOIS programas:
+  1. BuscaVagas.exe       -> procura vagas e gera a planilha
+  2. CandidatarVagas.exe  -> ajuda a preencher o formulário de candidatura
+
+Use o 1 primeiro. O 2 é opcional, para quando você já tiver vagas escolhidas.
+
+
+PARTE 1 — BUSCAR VAGAS (BuscaVagas.exe)
+========================================
+
+1) ABRIR
+   Dê dois cliques em BuscaVagas.exe. Pode deixar a pasta onde quiser
+   (ex.: Área de Trabalho) — mas mantenha os arquivos desta pasta juntos
+   (perfis, etc.).
+
+   Se o Windows mostrar um aviso azul "O Windows protegeu o computador":
+   clique em "Mais informações" e depois em "Executar assim mesmo".
+   (É normal para programas novos que não são de grandes empresas.)
+
+2) ESCOLHER UM PERFIL PRONTO (mais fácil)
+   No topo da janela, escolha no menu "Perfil pronto" algo como
+   "Enfermagem (Contagem / Betim / Grande BH)" — isso já preenche tudo: as
+   palavras de busca, as cidades e o que aceitar ou não. Se nenhum perfil
+   pronto servir, deixe em "Meus filtros" e preencha manualmente (passo 3).
+
+3) CONFERIR OS CAMPOS (se não usar um perfil pronto)
+   - Palavras para buscar: o que você digitaria no site de vagas.
+     Ex.: enfermeiro, enfermeira, técnico de enfermagem
+   - Cidades aceitas: uma cidade por linha, no formato "Cidade, UF". SÓ
+     entram vagas dessas cidades — se quiser uma cidade vizinha, coloque-a
+     na lista também. Ex.:
+         Contagem, MG
+         Betim, MG
+         Belo Horizonte, MG
+         Ibirité, MG
+     (O perfil pronto de enfermagem já traz as cidades da Grande BH.)
+   - Alcance da busca: raio em km a partir da primeira cidade. Ele só
+     define o que os sites devolvem; quem decide é a lista de cidades.
+   - Palavras proibidas ficam em "Mostrar opções avançadas":
+       * "título tenha..." -> ex.: estagi, aprendiz. Só olha o TÍTULO, para
+         não descartar uma vaga boa que cita "estágio concluído" na descrição.
+       * "título OU descrição tenham..." -> use pouco.
+   Os filtros ficam salvos para a próxima vez.
+
+4) BUSCAR
+   Clique em "Buscar vagas" e aguarde alguns minutos (a janela mostra o
+   andamento). Alguns sites podem recusar de vez em quando; o programa tenta
+   de novo sozinho. No fim, ele pergunta se quer abrir a planilha.
+
+5) MARCAR AS VAGAS NA PLANILHA
+   Na coluna "Situação" escolha na lista:
+     Pendente    = ainda não decidi
+     Candidatei  = já me candidatei (fica verde)
+     Recusei     = não me interessa (fica cinza)
+   Na coluna "Auto-preencher", marque "Sim" nas vagas em que você quer
+   ajuda para preencher o formulário (ver Parte 2).
+   Clique no link da coluna "Link" para abrir a vaga no site.
+   IMPORTANTE: depois de marcar, SALVE (Ctrl+S). O ideal é também FECHAR o
+   Excel antes de buscar de novo ou abrir o CandidatarVagas.
+
+6) PRÓXIMAS BUSCAS
+   O programa lê o que você marcou e não mostra de novo as vagas que você
+   já candidatou ou recusou. Elas ficam guardadas na aba "Já tratadas".
+   A aba "Descartadas (última busca)" mostra o que foi removido pelo
+   filtro e por quê — útil se achar que uma vaga boa não apareceu.
+
+
+PARTE 2 — CANDIDATAR (CandidatarVagas.exe)
+============================================
+
+Esse programa abre, uma de cada vez, as vagas marcadas com "Sim" na coluna
+Auto-preencher. No Indeed, quando a vaga tem "Candidatura Simplificada", ele
+preenche nome, e-mail, telefone e currículo automaticamente — mas NUNCA
+clica em enviar. Você sempre revisa e decide.
+
+1) Na planilha, marque "Sim" na coluna Auto-preencher e salve (Ctrl+S).
+   Não precisa buscar de novo: o CandidatarVagas lê a planilha sozinho.
+2) Abra o CandidatarVagas.exe (pelo botão "Candidatar nas vagas marcadas"
+   dentro do BuscaVagas, ou direto, dando dois cliques nele).
+3) Na primeira vez, preencha seu nome, e-mail, telefone e escolha o arquivo
+   do currículo (PDF) e clique em "Salvar meus dados".
+4) Clique em "Iniciar candidaturas". Na primeiríssima vez, ele baixa um
+   navegador (1-2 minutos, só acontece uma vez).
+5) Para cada vaga, uma janela do navegador abre. Revise o que foi
+   preenchido, responda as perguntas da vaga e clique em enviar você mesmo
+   no site. Depois, na janela do programa, clique em:
+     "✅ Já enviei / candidatei" -> marca a vaga como Candidatei
+     "⏭️ Pular esta vaga"        -> não marca nada, segue para a próxima
+     "🛑 Parar tudo"             -> interrompe (nada é marcado sem você confirmar)
+6) No fim, a planilha é atualizada sozinha com o que você marcou. Se ela
+   estiver aberta no Excel, feche e clique em "Abrir planilha" no BuscaVagas.
+
+Fora do Indeed, o programa só abre a aba — você preenche na mão.
+
+
+PARTE 3 — CARTA DE APRESENTAÇÃO PERSONALIZADA (opcional)
+===========================================================
+
+Dentro do CandidatarVagas, enquanto estiver revisando uma vaga, o botão
+"✍️ Gerar carta personalizada" cria uma carta de apresentação ajustada
+àquela vaga específica, usando seu currículo em PDF.
+
+1) Clique em "Obter chave grátis" (abre o site do Google AI Studio) e crie
+   uma chave de API gratuita (é rápido, só precisa de uma conta Google).
+2) Cole a chave no campo "Chave Gemini" e clique em "Salvar meus dados".
+   Você só faz isso UMA VEZ — a chave fica salva para as próximas vezes.
+3) Durante a revisão de uma vaga, clique em "✍️ Gerar carta personalizada".
+   Um arquivo Word (.docx) é criado e aberto automaticamente, com a carta
+   e algumas sugestões de como destacar seu currículo para aquela vaga.
+4) Leia e ajuste a carta antes de usar — ela é só um rascunho para revisão,
+   nunca é enviada automaticamente.
+
+O botão "📄 Gerar currículo adaptado" funciona parecido, mas reorganiza seu
+currículo inteiro para aquela vaga (mesmas empresas, mesmos cargos, mesmas
+datas — só muda a ordem e o destaque). Se alguma informação gerada não bater
+com o que está no seu currículo original, o programa avisa em vermelho no
+topo do arquivo E numa janela de alerta — sempre revise esses casos à mão
+antes de usar o currículo.
+
+Importante: para gerar a carta ou o currículo adaptado, o texto do seu
+currículo e da vaga são enviados ao Google (API do Gemini). O programa nunca
+deveria inventar experiência, curso ou habilidade que não esteja no seu
+currículo real — e tem uma checagem automática pra pegar os casos mais
+graves — mas sempre releia o resultado antes de enviar para uma empresa.
+
+
+Se der algum erro, mande o arquivo buscavagas.log (da mesma pasta) para quem
+configurou o programa.

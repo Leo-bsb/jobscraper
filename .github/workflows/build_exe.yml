@@ -1,0 +1,35 @@
+name: Gerar BuscaVagas.exe + CandidatarVagas.exe
+
+on:
+  workflow_dispatch: {}   # botão "Run workflow" na aba Actions
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-build.txt
+      - name: Empacotar BuscaVagas.exe
+        run: >
+          pyinstaller --noconfirm --clean --onefile --windowed --name BuscaVagas
+          --collect-all jobspy --collect-all tls_client app.py
+      - name: Empacotar CandidatarVagas.exe
+        run: >
+          pyinstaller --noconfirm --clean --onefile --windowed --name CandidatarVagas
+          --collect-all playwright --collect-all google.genai --collect-all pypdf
+          --collect-all docx candidatar_app.py
+      - name: Juntar tudo num pacote só
+        shell: bash
+        run: |
+          mkdir pacote
+          cp dist/BuscaVagas.exe pacote/
+          cp dist/CandidatarVagas.exe pacote/
+          cp COMO_USAR.txt pacote/
+          cp -r perfis pacote/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BuscaVagas
+          path: pacote/

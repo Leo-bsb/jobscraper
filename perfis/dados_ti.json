@@ -1,0 +1,101 @@
+{
+  "_nome_exibicao": "Dados / TI (Brasília)",
+  "versao_filtros": 3,
+  "termos_busca": [
+    "dados"
+  ],
+  "cidades": [
+    "Brasília, DF",
+    "DF",
+    "Distrito Federal",
+    "Federal District"
+  ],
+  "alcance_km": 80,
+  "aceitar_home_office_todo_brasil": true,
+  "termos_home_office": [
+    "home office",
+    "homeoffice",
+    "home-office",
+    "remoto",
+    "remote",
+    "trabalho a distancia"
+  ],
+  "termos_fortes": [
+    "python",
+    "sql",
+    "power bi",
+    "poder bi",
+    "dashboard",
+    "etl",
+    "elt",
+    "machine learning",
+    "estatistic",
+    "data engineer",
+    "data scientist",
+    "data analyst",
+    "cientista de dados",
+    "engenheiro de dados",
+    "analista de dados",
+    "business intelligence",
+    "databricks",
+    "spark",
+    "airflow",
+    "pandas",
+    "tableau",
+    "looker",
+    "snowflake",
+    "big data",
+    "pipeline de dados",
+    "banco de dados",
+    "data warehouse",
+    "data lake",
+    "nosql",
+    "mineracao de dados",
+    "ciencia de dados"
+  ],
+  "termos_fracos": [
+    "desenvolv",
+    "analis",
+    "automac"
+  ],
+  "exigir_termo_forte": true,
+  "minimo_de_termos": 2,
+  "termos_proibidos_titulo": [
+    "almoxarifado",
+    "assistente administrativo",
+    "auxiliar administrativo",
+    "auxiliar de treinamento",
+    "auxiliar financeiro",
+    "back office",
+    "backoffice",
+    "bobinador",
+    "consultor de vendas",
+    "contas a pagar",
+    "estagi",
+    "jovem aprendiz",
+    "logistic",
+    "montador",
+    "motorista",
+    "operador de caixa",
+    "promotor de vendas",
+    "recepcao",
+    "representante comercial",
+    "senior",
+    "sr",
+    "telemarketing",
+    "televendas",
+    "trainee",
+    "vendedor"
+  ],
+  "termos_proibidos": [
+    "digitador",
+    "digitacao de dados"
+  ],
+  "dias": 7,
+  "sites": [
+    "indeed",
+    "linkedin",
+    "glassdoor"
+  ],
+  "resultados_por_busca": 40
+}

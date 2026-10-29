@@ -1,0 +1,14 @@
+vagas.db
+vagas_da_semana*.xlsx
+buscavagas.log
+__pycache__/
+*.pyc
+build/
+dist/
+*.spec
+perfil.json
+navegador_indeed/
+cartas/
+curriculos_adaptados/
+navegador_programa/
+descartadas_ultima_busca.json
