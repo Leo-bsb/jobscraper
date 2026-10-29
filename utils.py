@@ -94,27 +94,69 @@ NOT_REMOTE_PHRASES = (
     "exclusivamente presencial", "not remote", "no remote",
 )
 
+NOT_HYBRID_PHRASES = (
+    "nao e hibrid", "nao sera hibrid", "sem hibrid", "nao e um modelo hibrid",
+    "not hybrid", "no hybrid",
+)
+
+# Radicais, não palavras inteiras: em português a vaga costuma ser "remota" /
+# "híbrida", e procurar a string "remoto" não casa com "remota".
+REMOTE_RE = re.compile(r"\bremot[ao]s?\b")
+HYBRID_RE = re.compile(r"\bhibrid[ao]s?\b")
+
 
 def says_not_remote(text_norm: str) -> bool:
     return any(p in text_norm for p in NOT_REMOTE_PHRASES)
 
 
+def says_not_hybrid(text_norm: str) -> bool:
+    return any(p in text_norm for p in NOT_HYBRID_PHRASES)
+
+
 def detect_work_model(text_norm: str) -> str:
-    if "hibrido" in text_norm or "hybrid" in text_norm:
+    if (HYBRID_RE.search(text_norm) or "hybrid" in text_norm) and not says_not_hybrid(text_norm):
         return "Híbrido"
     if says_not_remote(text_norm):
         return "Presencial"
-    if any(k in text_norm for k in ("home office", "homeoffice", "home-office", "remoto", "remote")):
+    if REMOTE_RE.search(text_norm) or any(
+            k in text_norm for k in ("home office", "homeoffice", "home-office",
+                                     "trabalho a distancia")):
         return "Remoto"
     if any(k in text_norm for k in ("presencial", "on-site", "onsite")):
         return "Presencial"
     return "Não informado"
 
 
+# Só "R$" — antes aceitávamos também "RS" (sigla de estado) e "Porto Alegre,
+# RS 90010-000" virava "R$ 90010 - R$ 000".
 _SALARY_RE = re.compile(
-    r"(?:r\$|\brs\b)\s*(\d[\d.,]*)(?:\s*(?:a|até|ate|-)\s*(?:r\$|\brs\b)?\s*(\d[\d.,]*))?",
+    r"r\$\s*(\d[\d.,]*)(?:\s*(?:a|até|ate|-|–)\s*(?:r\$\s*)?(\d[\d.,]*))?",
     re.IGNORECASE,
 )
+
+
+def _parse_br_number(text: str):
+    """'5.000,50' -> 5000.5 ; '5.000' -> 5000.0 ; inválido -> None."""
+    s = str(text or "").strip().rstrip(".,")
+    if not s:
+        return None
+    if "," in s:
+        s = s.replace(".", "").replace(",", ".")
+    elif s.count(".") == 1 and len(s.split(".")[1]) == 3 and len(s) > 4:
+        s = s.replace(".", "")
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def format_brl(value) -> str:
+    """5000.0 -> 'R$ 5.000' ; 5000.5 -> 'R$ 5.000,50'."""
+    if value is None:
+        return ""
+    if abs(value - round(value)) < 0.005:
+        return "R$ " + f"{int(round(value)):,}".replace(",", ".")
+    return "R$ " + f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 def extract_salary(text: str) -> str:
@@ -122,6 +164,12 @@ def extract_salary(text: str) -> str:
     match = _SALARY_RE.search(text or "")
     if not match:
         return ""
-    low = match.group(1).rstrip(".,")
-    high = (match.group(2) or "").rstrip(".,")
-    return f"R$ {low} - R$ {high}" if high else f"R$ {low}"
+    low = _parse_br_number(match.group(1))
+    high = _parse_br_number(match.group(2) or "")
+    if low is None or low <= 0:
+        return ""
+    if high is not None and high < low:
+        low, high = high, low
+    if high:
+        return f"{format_brl(low)} - {format_brl(high)}"
+    return format_brl(low)

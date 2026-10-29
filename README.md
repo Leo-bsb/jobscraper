@@ -42,10 +42,16 @@ Uma vaga só entra se:
    desde que a vaga **não** seja híbrida e o texto não negue o remoto ("não é
    remoto", "sem home office", "100% presencial").
 
+O home office é reconhecido por **radical**: `remot` pega remoto/remota/remotas,
+e `hibrid` pega híbrido/híbrida (antes só a forma masculina era detectada). O
+campo de local também conta — vaga com local "Home Office" e descrição que não
+repete a palavra é aceita normalmente.
+
 Termos de até 3 letras (`sr`, `sql`, `upa`) só contam como palavra inteira —
 senão `sr` casaria com "SRE" e `upa` com "upar". `filtros.json` de versões
 anteriores é migrado sozinho na primeira abertura (os termos de cargo vão para
-a lista "só no título"; quem tinha "Cidade, DF" ganha a linha "DF").
+a lista "só no título"; quem tinha "Cidade, DF" ganha a linha "DF"; e
+`remoto`/`remote` em `termos_home_office` viram `remot`).
 
 **Por que "termo forte" existe:** palavras como `desenvolv` e `analis`
 aparecem em qualquer vaga de desenvolvedor/analista, e até em rodapés padrão
@@ -151,6 +157,12 @@ python main.py --email      # e-mail com as vagas novas (variáveis JOBSCRAPER_S
 ```
 Filtros ficam em `filtros.json`, perfil do candidato em `perfil.json` (ambos
 editáveis à mão ou pela interface).
+
+## Testes
+Sem rede, sem Excel, sem navegador — usa só `unittest` da biblioteca padrão:
+```bash
+python -m unittest discover -s tests -t .
+```
 
 ## Gerar os .exe
 Precisa ser feito no Windows (o PyInstaller não gera .exe a partir de Linux/Mac):

@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import sys
+from datetime import datetime
 
 logger = logging.getLogger("buscavagas.config")
 
@@ -87,7 +88,11 @@ NATIONAL_LOCATION_BY_SITE = {"linkedin": "Brazil"}
 #   lista também é usado como centro da busca nos sites — o raio de busca
 #   ("alcance_km") já cobre cidades vizinhas automaticamente).
 # ----------------------------------------------------------------------
-FILTERS_VERSION = 3
+FILTERS_VERSION = 4
+
+# Termos antigos de home office que não pegavam "remota"/"remotas" (o filtro
+# casa o COMEÇO da palavra, então "remoto" não acha "remota").
+_LEGACY_HOME_OFFICE = {"remoto", "remota", "remotas", "remote"}
 
 # Termos que, até a versão 2, ficavam em "termos_proibidos" (título + descrição)
 # mas na prática descrevem o CARGO — então passaram a valer só para o título.
@@ -109,7 +114,7 @@ DEFAULT_FILTERS = {
     "alcance_km": 80,
     "aceitar_home_office_todo_brasil": True,
     "termos_home_office": [
-        "home office", "homeoffice", "home-office", "remoto", "remote",
+        "home office", "homeoffice", "home-office", "remot",
         "trabalho a distancia",
     ],
     "termos_fortes": [
@@ -151,8 +156,14 @@ def _migrate_old_schema(saved: dict) -> dict:
         saved["termos_fortes"] = saved.pop("termos_obrigatorios_qualquer")
         saved.setdefault("termos_fracos", [])
         saved.setdefault("exigir_termo_forte", False)
-    if int(saved.get("versao_filtros", 0)) < 3:
-        saved = dict(saved)
+    try:
+        # Um "versao_filtros": null (ou "abc") no JSON derrubava o programa
+        # na abertura, porque int(None) levanta TypeError.
+        versao = int(saved.get("versao_filtros") or 0)
+    except (TypeError, ValueError):
+        versao = 0
+    saved = dict(saved)
+    if versao < 3:
         # v3: termos de cargo/senioridade passam a valer só no título.
         if "termos_proibidos" in saved:
             antigos = list(saved["termos_proibidos"])
@@ -166,22 +177,51 @@ def _migrate_old_schema(saved: dict) -> dict:
         if any(str(c).strip().upper().endswith(", DF") for c in cidades) and "DF" not in cidades:
             cidades.append("DF")
         saved["cidades"] = cidades
-        saved["versao_filtros"] = FILTERS_VERSION
+    if versao < 4:
+        # v4: home office por radical ("remot" acha remoto, remota, remotas).
+        termos = saved.get("termos_home_office")
+        if isinstance(termos, list):
+            saved["termos_home_office"] = list(dict.fromkeys(
+                "remot" if str(t).strip().lower() in _LEGACY_HOME_OFFICE else t
+                for t in termos))
+    saved["versao_filtros"] = FILTERS_VERSION
     return saved
+
+
+def _backup_broken_file() -> None:
+    """Move um filtros.json ilegível para .bak, em vez de perdê-lo no próximo save."""
+    try:
+        destino = FILTERS_PATH + ".bak"
+        if os.path.exists(destino):
+            destino = f"{FILTERS_PATH}.{datetime.now():%Y%m%d_%H%M%S}.bak"
+        os.replace(FILTERS_PATH, destino)
+        logger.warning("O filtros.json antigo foi guardado em %s.", destino)
+    except OSError as exc:
+        logger.warning("Não consegui guardar uma cópia do filtros.json antigo (%s).", exc)
 
 
 def load_filters() -> dict:
     """Lê filtros.json (criando-o com os padrões se não existir)."""
     filters = copy.deepcopy(DEFAULT_FILTERS)
-    if os.path.exists(FILTERS_PATH):
-        try:
-            with open(FILTERS_PATH, "r", encoding="utf-8") as f:
-                saved = json.load(f)
-            filters.update(_migrate_old_schema(saved))
-        except (OSError, ValueError) as exc:
-            logger.warning("Não consegui ler filtros.json (%s). Usando padrões.", exc)
-    else:
+    if not os.path.exists(FILTERS_PATH):
         save_filters(filters)
+        return filters
+
+    try:
+        with open(FILTERS_PATH, "r", encoding="utf-8") as f:
+            saved = json.load(f)
+        if not isinstance(saved, dict):
+            raise ValueError("o conteúdo não é um objeto JSON")
+    except (OSError, ValueError) as exc:
+        logger.warning("Não consegui ler filtros.json (%s). Usando padrões.", exc)
+        _backup_broken_file()
+        return filters
+
+    try:
+        filters.update(_migrate_old_schema(saved))
+    except Exception as exc:  # formato inesperado: não impede o programa de abrir
+        logger.exception("filtros.json tem um formato inesperado (%s). Usando padrões.", exc)
+        _backup_broken_file()
     return filters
 
 

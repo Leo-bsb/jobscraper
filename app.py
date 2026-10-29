@@ -200,10 +200,16 @@ class App(tk.Tk):
         buttons.grid(row=5, column=0, sticky="ew", **pad)
         self.btn_run = ttk.Button(buttons, text="🔍  Buscar vagas", command=self._on_run)
         self.btn_run.pack(side="left", padx=(0, 8), ipadx=10, ipady=4)
-        ttk.Button(buttons, text="Salvar filtros", command=self._on_save).pack(side="left", padx=4)
-        ttk.Button(buttons, text="Abrir planilha", command=self._on_open).pack(side="left", padx=4)
-        ttk.Button(buttons, text="📨  Candidatar nas vagas marcadas",
-                   command=self._on_open_companion).pack(side="left", padx=4)
+        self.btn_save = ttk.Button(buttons, text="Salvar filtros", command=self._on_save)
+        self.btn_save.pack(side="left", padx=4)
+        self.btn_open = ttk.Button(buttons, text="Abrir planilha", command=self._on_open)
+        self.btn_open.pack(side="left", padx=4)
+        self.btn_companion = ttk.Button(buttons, text="📨  Candidatar nas vagas marcadas",
+                                        command=self._on_open_companion)
+        self.btn_companion.pack(side="left", padx=4)
+        # Durante a busca TODOS ficam travados: abrir/regerar a planilha no meio
+        # de uma busca já sobrescreveu o arquivo que o pipeline estava gravando.
+        self._action_buttons = [self.btn_run, self.btn_save, self.btn_open, self.btn_companion]
 
         self.log = scrolledtext.ScrolledText(main, height=9, state="disabled", wrap="word")
         self.log.grid(row=6, column=0, sticky="nsew", **pad)
@@ -321,6 +327,13 @@ class App(tk.Tk):
         except OSError as exc:
             messagebox.showerror("Não consegui abrir", str(exc))
 
+    def _set_busy(self, busy: bool) -> None:
+        """Trava/destrava os botões de ação durante a busca (evita escrita concorrente)."""
+        estado = "disabled" if busy else "normal"
+        for botao in self._action_buttons:
+            botao.config(state=estado)
+        self.btn_run.config(text="Buscando... aguarde" if busy else "🔍  Buscar vagas")
+
     def _on_run(self):
         try:
             self.filters = self._collect()
@@ -328,7 +341,7 @@ class App(tk.Tk):
             messagebox.showwarning("Atenção", str(exc))
             return
         config.save_filters(self.filters)
-        self.btn_run.config(state="disabled", text="Buscando... aguarde")
+        self._set_busy(True)
         threading.Thread(target=self._worker, args=(self.filters,), daemon=True).start()
 
     def _worker(self, filters):
@@ -354,7 +367,7 @@ class App(tk.Tk):
                 elif kind == "done":
                     self._finish(payload)
                 elif kind == "error":
-                    self.btn_run.config(state="normal", text="🔍  Buscar vagas")
+                    self._set_busy(False)
                     messagebox.showerror(
                         "Ocorreu um erro",
                         f"{payload}\n\nDetalhes no arquivo buscavagas.log (na pasta do programa).")
@@ -370,7 +383,7 @@ class App(tk.Tk):
         super().destroy()
 
     def _finish(self, result: dict):
-        self.btn_run.config(state="normal", text="🔍  Buscar vagas")
+        self._set_busy(False)
         msg = (f"Busca concluída!\n\nVagas novas: {result['novas']}\n"
                f"(aprovadas pelo filtro: {result['aprovadas']} de {result['coletadas']} coletadas)\n\n"
                "Abrir a planilha agora?")

@@ -21,11 +21,17 @@ from datetime import datetime
 
 import config
 from utils import (
-    detect_work_model, extract_salary, find_terms, make_dup_key,
+    detect_work_model, extract_salary, find_terms, format_brl, make_dup_key,
     make_job_hash, normalize_text, says_not_remote,
 )
 
 logger = logging.getLogger("buscavagas.filtering")
+
+# Intervalo salarial que o JobSpy devolve em inglês ("yearly") -> sufixo curto.
+_PERIODO = {
+    "yearly": "/ano", "annual": "/ano", "monthly": "/mês", "weekly": "/semana",
+    "daily": "/dia", "hourly": "/hora",
+}
 
 
 def _local_terms(filters: dict) -> list:
@@ -45,10 +51,35 @@ def _local_terms(filters: dict) -> list:
 
 
 def _salary(raw: dict, description: str) -> str:
-    lo, hi = raw.get("min_amount"), raw.get("max_amount")
-    if lo not in ("", None) and hi not in ("", None):
-        return f"{raw.get('currency') or 'R$'} {lo} - {hi} ({raw.get('interval') or ''})".strip()
-    return extract_salary(description)
+    """
+    Faixa salarial do site (min_amount/max_amount) já formatada em pt-BR;
+    se o site não informar, tenta achar "R$ ..." no texto da descrição.
+    """
+    def _num(valor):
+        if valor in ("", None):
+            return None
+        try:
+            numero = float(valor)
+        except (TypeError, ValueError):
+            return None
+        return numero if numero > 0 else None
+
+    lo, hi = _num(raw.get("min_amount")), _num(raw.get("max_amount"))
+    if lo is None:
+        return extract_salary(description)
+
+    moeda = str(raw.get("currency") or "").strip().upper()
+    if moeda and moeda not in ("BRL", "R$"):
+        # Não é real: mostra o código da moeda em vez de fingir que é R$.
+        texto = f"{moeda} {lo:,.0f}"
+        if hi is not None and hi >= lo:
+            texto += f" - {moeda} {hi:,.0f}"
+        return texto
+
+    periodo = _PERIODO.get(str(raw.get("interval") or "").strip().lower(), "")
+    if hi is not None and hi >= lo:
+        return f"{format_brl(lo)} - {format_brl(hi)}{(' ' + periodo) if periodo else ''}"
+    return f"{format_brl(lo)}{(' ' + periodo) if periodo else ''}"
 
 
 def evaluate(raw: dict, filters: dict):
@@ -57,6 +88,9 @@ def evaluate(raw: dict, filters: dict):
     descricao = str(raw.get("description", "") or "")
     local = str(raw.get("location", "") or "")
     texto = normalize_text(f"{titulo} {descricao}")
+    # O modelo de trabalho também olha o CAMPO DE LOCAL: muitas vagas chegam
+    # com local "Home Office" e descrição que não repete a palavra "remoto".
+    texto_modelo = normalize_text(f"{titulo} {descricao} {local}")
 
     # Senioridade e tipo de cargo são decididos pelo TÍTULO: na descrição,
     # "estágio concluído", "reporta ao gerente sênior" ou "área de logística"
@@ -79,12 +113,12 @@ def evaluate(raw: dict, filters: dict):
     if filters.get("exigir_termo_forte", True) and fortes and not achados_fortes:
         return None, "só tem termo(s) fraco(s), sem nenhum termo forte"
 
-    modelo_trabalho = detect_work_model(texto)
+    modelo_trabalho = detect_work_model(texto_modelo)
     na_cidade = bool(find_terms(normalize_text(local), _local_terms(filters), whole_word=True))
     # Só considera home office/remoto se o PRÓPRIO TEXTO da vaga disser isso
     # (não confiamos na flag is_remote do site, que vem errada com frequência).
-    home_office = (bool(find_terms(texto, filters.get("termos_home_office", [])))
-                   and not says_not_remote(texto))
+    home_office = (bool(find_terms(texto_modelo, filters.get("termos_home_office", [])))
+                   and not says_not_remote(texto_modelo))
     if not na_cidade:
         if modelo_trabalho == "Híbrido":
             # Híbrido exige ir ao escritório: fora da sua região não serve,

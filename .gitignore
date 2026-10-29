@@ -1,6 +1,10 @@
 vagas.db
+vagas.db-wal
+vagas.db-shm
 vagas_da_semana*.xlsx
 buscavagas.log
+filtros.json
+filtros.json*.bak
 __pycache__/
 *.pyc
 build/

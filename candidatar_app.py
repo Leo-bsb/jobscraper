@@ -51,6 +51,7 @@ class App(tk.Tk):
         self.minsize(660, 560)
 
         database.init_db()
+        self._setup_logging()
         self.profile = config.load_profile()
         self._advance_choice = None
         self._abort = False
@@ -63,6 +64,20 @@ class App(tk.Tk):
         self._refresh_count()
 
     # ------------------------------------------------------------------- tela
+    @staticmethod
+    def _setup_logging():
+        """
+        Mesmo log do BuscaVagas. Sem isto, com --windowed (stderr = devnull),
+        TODO aviso de export_xlsx/apply_core desaparecia sem deixar rastro — e
+        o COMO_USAR manda o usuário enviar justamente esse arquivo.
+        """
+        root = logging.getLogger()
+        root.setLevel(logging.INFO)
+        handler = logging.FileHandler(config.LOG_PATH, encoding="utf-8")
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+        root.addHandler(handler)
+
     def _build(self):
         pad = {"padx": 12, "pady": 6}
         main = ttk.Frame(self, padding=10)
@@ -349,6 +364,12 @@ class App(tk.Tk):
         self.flow.grid(row=4, column=0, sticky="ew", padx=12, pady=6)
         try:
             self._run_flow(jobs)
+        except Exception as exc:  # ex.: Playwright não abriu o navegador, disco cheio...
+            logging.getLogger("buscavagas.candidatar").exception(
+                "Erro durante as candidaturas")
+            messagebox.showerror(
+                "Ocorreu um erro",
+                f"{exc}\n\nDetalhes no arquivo {config.LOG_PATH} (na pasta do programa).")
         finally:
             self.flow.grid_remove()
             self.btn_start.config(state="normal")
