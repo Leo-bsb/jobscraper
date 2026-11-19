@@ -274,3 +274,6 @@ informações → Executar assim mesmo*.
   com coleta real no Indeed (dados júnior e enfermagem), precisão e defeitos.
 - [`docs/ESTUDO_SAAS.md`](docs/ESTUDO_SAAS.md): estudo de viabilidade do
   produto como SaaS (mercado, preços, arquitetura, riscos legais e roadmap).
+- [`docs/MODELO_DESKTOP_LICENCIADO.md`](docs/MODELO_DESKTOP_LICENCIADO.md):
+  coleta na máquina do usuário com licença paga (custos, enforcement,
+  cobrança e riscos).

@@ -286,6 +286,11 @@ por perfil, R$ 69 para 3 perfis, anual com 2 meses grátis.
 - **Semanas 11–13**: decidir se vale web app (só se o feedback pedir). Até lá,
   Excel + e-mail é suficiente.
 
+### Variante “roda na máquina do usuário”
+Se a coleta rodar no PC do cliente (IP dele) com licença paga, o custo de
+infra e o bloqueio caem bastante. Os detalhes de licenciamento, cobrança e
+limites estão em [`MODELO_DESKTOP_LICENCIADO.md`](MODELO_DESKTOP_LICENCIADO.md).
+
 ### Veredito desta variante
 **Sim, é o caminho mais racional para começar** — desde que o produto seja
 vendido como **curadoria entregue em Excel**, com fontes legais e limite de
