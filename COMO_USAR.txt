@@ -127,5 +127,33 @@ currículo real — e tem uma checagem automática pra pegar os casos mais
 graves — mas sempre releia o resultado antes de enviar para uma empresa.
 
 
+PARTE 4 — OPÇÕES DE LINHA DE COMANDO (para quem usa o terminal)
+===============================================================
+
+Se você usa "python main.py" em vez do .exe, existem opções extras:
+
+  python main.py --check       -> confere filtros, perfis e permissões de
+                                  gravação, SEM buscar nada (código 2 se
+                                  houver problema, 0 se estiver tudo certo)
+  python main.py --dry-run     -> mostra quantas consultas seriam feitas e
+                                  quais locais, SEM acessar a internet
+  python main.py --days 30     -> muda a janela de busca (de 1 a 90 dias)
+  python main.py --only-export -> não busca; só atualiza a planilha com o
+                                  que já está salvo no banco
+  python main.py --email       -> ao terminar a busca, envia as vagas novas
+                                  por e-mail (precisa configurar o SMTP)
+  python main.py --log-level DEBUG   -> log mais detalhado (INFO é o padrão;
+                                  também aceita WARNING e ERROR)
+  python main.py --version     -> mostra a versão do programa
+
+Dica: se a busca não achar nada, rode primeiro "python main.py --check" e
+depois "python main.py --dry-run" para ver se os filtros estão montando as
+consultas esperadas.
+
+Privacidade: perfil.json guarda seu e-mail, telefone e a chave do Gemini.
+Não envie esse arquivo para ninguém. A candidatura assistida nunca clica em
+"enviar" sozinha — você sempre revisa e envia no site.
+
+
 Se der algum erro, mande o arquivo buscavagas.log (da mesma pasta) para quem
 configurou o programa.

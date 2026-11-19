@@ -8,14 +8,21 @@ import sys
 import unicodedata
 
 
-def open_file(path: str) -> None:
-    """Abre um arquivo no programa padrão do sistema (Explorer/Finder/etc.)."""
-    if sys.platform.startswith("win"):
-        os.startfile(path)  # noqa: S606
-    elif sys.platform == "darwin":
-        subprocess.call(["open", path])
-    else:
-        subprocess.call(["xdg-open", path])
+def open_file(path: str) -> bool:
+    """
+    Abre um arquivo no programa padrão do sistema (Explorer/Finder/etc.).
+    Retorna True se o comando foi disparado com sucesso e False em falha
+    (arquivo inexistente, programa ausente etc.), sem propagar exceção.
+    """
+    try:
+        if sys.platform.startswith("win"):
+            os.startfile(path)  # noqa: S606
+            return True
+        if sys.platform == "darwin":
+            return subprocess.call(["open", path]) == 0
+        return subprocess.call(["xdg-open", path]) == 0
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False
 
 
 def normalize_text(text) -> str:
@@ -55,8 +62,24 @@ def find_terms(text_norm: str, terms: list, whole_word: bool = False) -> list:
     Termos de até 3 letras (siglas como 'sr', 'sql', 'etl', 'upa') sempre
     exigem a palavra inteira — senão 'sr' casaria com 'SRE' e 'upa' com 'upar'.
     """
+    if text_norm is None:
+        return []
+    if not isinstance(text_norm, str):
+        text_norm = str(text_norm)
+    if terms is None:
+        return []
+    if isinstance(terms, str):
+        terms = [terms]
+    elif not isinstance(terms, (list, tuple, set)):
+        try:
+            terms = list(terms)
+        except TypeError:
+            terms = [terms]
+
     found = []
     for term in terms:
+        if not isinstance(term, str):
+            continue
         t = normalize_text(term)
         if not t:
             continue
@@ -64,13 +87,16 @@ def find_terms(text_norm: str, terms: list, whole_word: bool = False) -> list:
         if whole_word or len(t) <= 3:
             pattern += r"(?![a-z0-9])"
         if re.search(pattern, text_norm):
-            found.append(str(term).strip())
+            found.append(term.strip())
     return found
 
 
 def make_job_hash(empresa: str, titulo: str, local: str, url: str = "") -> str:
     """ID único da vaga: prioriza a URL; senão usa empresa|título|local."""
-    base = url.strip() if url else f"{empresa}|{titulo}|{local}"
+    if url:
+        base = str(url).strip()
+    else:
+        base = f"{empresa or ''}|{titulo or ''}|{local or ''}"
     return hashlib.md5(normalize_text(base).encode("utf-8")).hexdigest()
 
 
@@ -79,7 +105,7 @@ def make_dup_key(empresa: str, titulo: str, local: str) -> str:
     Chave para detectar a MESMA vaga publicada em sites diferentes:
     empresa + título + cidade (só o trecho antes da vírgula do local).
     """
-    cidade = normalize_text(str(local).split(",")[0])
+    cidade = normalize_text(str(local or "").split(",")[0])
     base = f"{normalize_text(empresa)}|{normalize_text(titulo)}|{cidade}"
     return hashlib.md5(base.encode("utf-8")).hexdigest()
 
@@ -135,19 +161,42 @@ _SALARY_RE = re.compile(
 )
 
 
-def _parse_br_number(text: str):
-    """'5.000,50' -> 5000.5 ; '5.000' -> 5000.0 ; inválido -> None."""
-    s = str(text or "").strip().rstrip(".,")
+def parse_br_number(text: str):
+    """
+    Lê um número no formato brasileiro (ou americano simples):
+
+        '5.000,50'   -> 5000.5
+        '1.234.567'  -> 1234567.0
+        '12.345'     -> 12345.0
+        '1,5'        -> 1.5
+        '1.234,56'   -> 1234.56
+        'R$' / ''    -> None
+
+    Também aceita valores numéricos já prontos (ex.: 5000.0).
+    """
+    s = str(text if text is not None else "").strip()
+    s = re.sub(r"r\$\s*", "", s, flags=re.IGNORECASE).strip().rstrip(".,")
     if not s:
         return None
     if "," in s:
+        # Formato pt-BR: ponto é separador de milhar, vírgula é decimal.
         s = s.replace(".", "").replace(",", ".")
+    elif s.count(".") > 1:
+        # '1.234.567' (vários pontos de milhar, sem centavos)
+        partes = s.split(".")
+        if partes[0].isdigit() and all(len(p) == 3 and p.isdigit() for p in partes[1:]):
+            s = "".join(partes)
     elif s.count(".") == 1 and len(s.split(".")[1]) == 3 and len(s) > 4:
+        # '12.345' é milhar; '1.5' continua decimal.
         s = s.replace(".", "")
     try:
         return float(s)
     except ValueError:
         return None
+
+
+# Nome antigo mantido para não quebrar chamadas existentes.
+_parse_br_number = parse_br_number
 
 
 def format_brl(value) -> str:

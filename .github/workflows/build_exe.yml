@@ -12,10 +12,13 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements-build.txt
+      # Roda os testes ANTES de empacotar: não adianta gerar .exe quebrado.
+      - name: Rodar os testes
+        run: python -m unittest discover -s tests -t .
       - name: Empacotar BuscaVagas.exe
         run: >
           pyinstaller --noconfirm --clean --onefile --windowed --name BuscaVagas
-          --collect-all jobspy --collect-all tls_client app.py
+          --collect-all jobspy --collect-all tls_client --collect-all curl_cffi app.py
       - name: Empacotar CandidatarVagas.exe
         run: >
           pyinstaller --noconfirm --clean --onefile --windowed --name CandidatarVagas

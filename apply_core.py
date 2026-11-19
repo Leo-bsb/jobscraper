@@ -16,10 +16,29 @@ import logging
 import os
 import re
 import sys
+from urllib.parse import urlparse
 
 import config
 
 logger = logging.getLogger("buscavagas.apply_core")
+
+# ----------------------------------------------------------------------
+# INVARIANTE DE SEGURANÇA (não remova)
+#
+# Nenhum código deste projeto deve clicar em botões de ENVIO de candidatura.
+# A automação só abre a vaga e, no Indeed Easy Apply, preenche campos de
+# contato e anexa o currículo. Quem envia é sempre a pessoa, revisando a aba.
+# NEVER_SUBMIT existe para deixar isso explícito e para os testes conferirem.
+# ----------------------------------------------------------------------
+NEVER_SUBMIT = True
+
+# Extensões que o Indeed (e os navegadores) aceitam no campo de currículo.
+EXTENSOES_CURRICULO = (".pdf", ".doc", ".docx")
+
+# Tempo máximo (ms) por campo preenchido: um seletor que "trava" não pode
+# congelar a revisão da vaga.
+FIELD_TIMEOUT_MS = 3000
+UPLOAD_TIMEOUT_MS = 10000
 
 # No .exe, guardamos o navegador numa pasta fixa ao lado do programa. Assim a
 # instalação (install_browser) e o uso (new_browser_context) olham sempre para
@@ -47,6 +66,46 @@ FIELD_MAP = [
     (re.compile(r"^\s*(telefone|celular|phone|phone number|n[uú]mero de telefone)" + _LABEL_END, re.I),
      "telefone"),
 ]
+
+
+def is_safe_job_url(url) -> bool:
+    """
+    True só para links http/https com host válido. Bloqueia esquemas como
+    javascript:, file:, data: e links vazios — nunca navegamos para eles.
+
+    Também recusamos espaços e caracteres de controle (inclusive novas linhas)
+    dentro da URL: parsers e navegadores os tratam de forma inconsistente, o
+    que poderia transformar um link "http" em outra coisa. Barra invertida é
+    recusada pelo mesmo motivo (o navegador a interpreta como "/" em http).
+    """
+    if url is None:
+        return False
+    bruto = str(url).strip()
+    if not bruto:
+        return False
+    if "\\" in bruto:
+        return False
+    if any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7f for ch in bruto):
+        return False
+
+    try:
+        partes = urlparse(bruto)
+    except (TypeError, ValueError):
+        return False
+    if partes.scheme.lower() not in ("http", "https"):
+        return False
+    if not partes.netloc:
+        return False
+    try:
+        # host válido e porta numérica (urlparse levanta ValueError se a porta
+        # não for número — ex.: "http://javascript:alert(1)").
+        host = partes.hostname
+        partes.port
+    except ValueError:
+        return False
+    if not host:
+        return False
+    return True
 
 
 def _profile_value(profile: dict, key: str) -> str:
@@ -80,7 +139,10 @@ def install_browser(on_progress=None) -> bool:
     instalador do Playwright diretamente, por dentro do processo atual.
     """
     if on_progress:
-        on_progress("Baixando o navegador (só acontece uma vez, ~1-2 minutos)...")
+        try:
+            on_progress("Baixando o navegador (só acontece uma vez, ~1-2 minutos)...")
+        except Exception:  # callback da interface não pode impedir a instalação
+            pass
     try:
         from playwright.__main__ import main as playwright_cli
     except ImportError:
@@ -115,9 +177,10 @@ def fill_known_fields(page, profile: dict) -> int:
             field = page.get_by_label(label_regex)
             if field.count() == 0:
                 continue
-            current = (field.first.input_value() or "").strip()
+            # timeout= evita que um campo "teimoso" trave a revisão da vaga.
+            current = (field.first.input_value(timeout=FIELD_TIMEOUT_MS) or "").strip()
             if not current:
-                field.first.fill(value)
+                field.first.fill(value, timeout=FIELD_TIMEOUT_MS)
                 filled += 1
         except Exception:
             continue
@@ -125,15 +188,29 @@ def fill_known_fields(page, profile: dict) -> int:
 
 
 def try_upload_resume(page, resume_path: str) -> bool:
+    """
+    Anexa o currículo SÓ se o arquivo existir e tiver extensão aceita.
+    Retorna True apenas quando o envio do arquivo ao campo deu certo.
+    """
     if not resume_path:
         return False
+
+    caminho = str(resume_path).strip()
+    if not os.path.isfile(caminho):
+        logger.warning("Currículo não encontrado em %s; não vou anexar.", caminho)
+        return False
+    if os.path.splitext(caminho)[1].lower() not in EXTENSOES_CURRICULO:
+        logger.warning("Currículo com extensão não suportada (%s); use PDF, DOC ou DOCX.",
+                       os.path.basename(caminho))
+        return False
+
     try:
         file_input = page.locator("input[type='file']").first
         if file_input.count() > 0:
-            file_input.set_input_files(resume_path)
+            file_input.set_input_files(caminho, timeout=UPLOAD_TIMEOUT_MS)
             return True
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Não consegui anexar o currículo: %s", exc)
     return False
 
 
@@ -173,8 +250,16 @@ def open_and_fill(context, job: dict, profile: dict) -> dict:
     page = context.new_page()
     resultado = {"page": page, "pages": [page], "preencheu": False, "campos": 0,
                  "curriculo": False, "erro": None}
+
+    link = (job or {}).get("link", "")
+    if not is_safe_job_url(link):
+        # Nunca chamamos page.goto com javascript:/file:/data: ou link vazio.
+        resultado["erro"] = "Link da vaga inválido (só abro endereços http ou https)."
+        logger.warning("Link ignorado por segurança: %r", link)
+        return resultado
+
     try:
-        page.goto(job["link"], timeout=30000)
+        page.goto(link, timeout=30000)
         page.wait_for_timeout(2500)
         if job.get("site_origem") == "indeed":
             form = click_easy_apply(page)

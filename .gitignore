@@ -11,8 +11,18 @@ build/
 dist/
 *.spec
 perfil.json
+# Qualquer perfil pessoal (ex.: perfil.bak.json), mas o modelo pode ser commitado.
+perfil*.json
+!perfil_exemplo.json
 navegador_indeed/
 cartas/
 curriculos_adaptados/
 navegador_programa/
 descartadas_ultima_busca.json
+# Temporários da gravação atômica (config._write_json_atomic) e ferramentas
+.tmp-*
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+*.log

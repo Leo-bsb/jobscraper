@@ -22,7 +22,7 @@ from datetime import datetime
 import config
 from utils import (
     detect_work_model, extract_salary, find_terms, format_brl, make_dup_key,
-    make_job_hash, normalize_text, says_not_remote,
+    make_job_hash, normalize_text, parse_br_number, says_not_remote,
 )
 
 logger = logging.getLogger("buscavagas.filtering")
@@ -41,10 +41,18 @@ def _local_terms(filters: dict) -> list:
         entrava e aceitava qualquer cidade de Minas Gerais);
       - uma linha sem vírgula vale inteira: "DF" ou "Distrito Federal" aceitam
         a região toda, de propósito.
+
+    Entradas None/não-string são ignoradas (filtros antigos/editados à mão
+    podem trazer lixo).
     """
+    cidades = filters.get("cidades") or []
+    if isinstance(cidades, str):
+        cidades = [cidades]
     tokens = []
-    for cidade in filters.get("cidades", []):
-        nome = str(cidade).split(",")[0].strip()
+    for cidade in cidades:
+        if not isinstance(cidade, str):
+            continue
+        nome = cidade.split(",")[0].strip()
         if nome:
             tokens.append(nome)
     return tokens
@@ -54,13 +62,15 @@ def _salary(raw: dict, description: str) -> str:
     """
     Faixa salarial do site (min_amount/max_amount) já formatada em pt-BR;
     se o site não informar, tenta achar "R$ ..." no texto da descrição.
+
+    min_amount/max_amount podem vir como texto ("5.000,00") em algumas
+    versões do JobSpy, por isso usamos parse_br_number.
     """
     def _num(valor):
-        if valor in ("", None):
+        if valor is None or (isinstance(valor, str) and not valor.strip()):
             return None
-        try:
-            numero = float(valor)
-        except (TypeError, ValueError):
+        numero = parse_br_number(valor)
+        if numero is None:
             return None
         return numero if numero > 0 else None
 
@@ -82,11 +92,28 @@ def _salary(raw: dict, description: str) -> str:
     return f"{format_brl(lo)}{(' ' + periodo) if periodo else ''}"
 
 
-def evaluate(raw: dict, filters: dict):
-    """Retorna (registro, None) se aprovada, ou (None, motivo) se descartada."""
-    titulo = str(raw.get("title", "") or "")
-    descricao = str(raw.get("description", "") or "")
-    local = str(raw.get("location", "") or "")
+def _texto(valor) -> str:
+    """Converte um campo da vaga em texto sem estourar com None/listas/etc."""
+    if valor is None:
+        return ""
+    return valor if isinstance(valor, str) else str(valor)
+
+
+def evaluate(raw, filters: dict):
+    """
+    Retorna (registro, None) se aprovada, ou (None, motivo) se descartada.
+
+    Uma vaga inválida (None, não-dict ou com campo esquisito) NÃO derruba a
+    coleta: devolve (None, "vaga inválida: <motivo>") e o chamador segue.
+    """
+    if not isinstance(raw, dict):
+        return None, "vaga inválida: os dados da vaga não são um objeto"
+    if not isinstance(filters, dict):
+        return None, "vaga inválida: os filtros não são um objeto válido"
+
+    titulo = _texto(raw.get("title"))
+    descricao = _texto(raw.get("description"))
+    local = _texto(raw.get("location"))
     texto = normalize_text(f"{titulo} {descricao}")
     # O modelo de trabalho também olha o CAMPO DE LOCAL: muitas vagas chegam
     # com local "Home Office" e descrição que não repete a palavra "remoto".
@@ -108,7 +135,11 @@ def evaluate(raw: dict, filters: dict):
     achados_fracos = find_terms(texto, fracos)
     encontrados = achados_fortes + achados_fracos
 
-    if (fortes or fracos) and len(encontrados) < int(filters.get("minimo_de_termos", 1)):
+    try:
+        minimo = int(filters.get("minimo_de_termos", 1))
+    except (TypeError, ValueError):
+        minimo = 1
+    if (fortes or fracos) and len(encontrados) < minimo:
         return None, "menos termos do que o mínimo exigido"
     if filters.get("exigir_termo_forte", True) and fortes and not achados_fortes:
         return None, "só tem termo(s) fraco(s), sem nenhum termo forte"
@@ -127,8 +158,8 @@ def evaluate(raw: dict, filters: dict):
         if not (filters.get("aceitar_home_office_todo_brasil") and home_office):
             return None, "fora das cidades aceitas e sem home office"
 
-    empresa = str(raw.get("company", "") or "") or "(empresa não informada)"
-    link = str(raw.get("job_url", "") or "")
+    empresa = _texto(raw.get("company")) or "(empresa não informada)"
+    link = _texto(raw.get("job_url"))
     local_exibicao = local or "(local não informado)"
 
     # Para vagas remotas, a cidade do anúncio não importa de verdade (o mesmo
@@ -148,8 +179,8 @@ def evaluate(raw: dict, filters: dict):
         "pontos": len(encontrados),
         "link": link,
         "descricao": descricao,
-        "site_origem": str(raw.get("site", "") or ""),
-        "data_publicacao": str(raw.get("date_posted", "") or ""),
+        "site_origem": _texto(raw.get("site")),
+        "data_publicacao": _texto(raw.get("date_posted")),
         "data_coleta": datetime.now().isoformat(timespec="seconds"),
         "situacao": config.STATUS_PENDENTE,
         "auto_preencher": config.AUTOFILL_NAO,
@@ -166,15 +197,22 @@ def filter_jobs(raw_jobs: list, filters: dict):
     """
     approved, discarded, seen_keys, reasons = [], [], set(), Counter()
 
+    # raw_jobs pode vir None (ou de um formato inesperado) sem quebrar a busca.
+    if raw_jobs is None:
+        raw_jobs = []
+    elif not isinstance(raw_jobs, (list, tuple)):
+        raw_jobs = list(raw_jobs)
+
     for raw in raw_jobs:
         record, reason = evaluate(raw, filters)
         if record is None:
             reasons[reason] += 1
+            campos = raw if isinstance(raw, dict) else {}
             discarded.append({
-                "titulo": str(raw.get("title", "") or ""),
-                "empresa": str(raw.get("company", "") or "") or "(empresa não informada)",
-                "localizacao": str(raw.get("location", "") or "") or "(local não informado)",
-                "link": str(raw.get("job_url", "") or ""),
+                "titulo": _texto(campos.get("title")),
+                "empresa": _texto(campos.get("company")) or "(empresa não informada)",
+                "localizacao": _texto(campos.get("location")) or "(local não informado)",
+                "link": _texto(campos.get("job_url")),
                 "motivo": reason,
             })
         elif record["chave_dup"] in seen_keys:

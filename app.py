@@ -7,6 +7,7 @@ filtros), clicar em "Buscar vagas" e abrir a planilha. Vira o BuscaVagas.exe
 import logging
 import os
 import queue
+import re
 import subprocess
 import sys
 import threading
@@ -28,6 +29,26 @@ from utils import open_file, parse_list, parse_lines
 SITE_LABELS = {"indeed": "Indeed", "linkedin": "LinkedIn", "glassdoor": "Glassdoor"}
 PERSONALIZADO = "— Meus filtros (já salvos) —"
 
+# Dados pessoais nunca devem aparecer no painel de log (que pode ser mostrado
+# para outra pessoa). Mascaramos e-mail e chaves de API por precaução.
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+_API_KEY_RE = re.compile(r"AIza[0-9A-Za-z_\-]{10,}")
+
+
+def _redact(text: str) -> str:
+    """Troca e-mails e chaves do Gemini por *** antes de mostrar/logar."""
+    if not text:
+        return text
+    text = _EMAIL_RE.sub("***", str(text))
+    return _API_KEY_RE.sub("***", text)
+
+
+class _RedactingFormatter(logging.Formatter):
+    """Formatter que aplica _redact ao texto final — vale também para o arquivo."""
+
+    def format(self, record):
+        return _redact(super().format(record))
+
 
 class QueueLogHandler(logging.Handler):
     """Encaminha as mensagens de log do programa para a caixa de texto da janela."""
@@ -39,7 +60,11 @@ class QueueLogHandler(logging.Handler):
 
     def emit(self, record):
         if record.name.startswith("buscavagas") or record.levelno >= logging.WARNING:
-            self.q.put(("log", self.format(record)))
+            try:
+                self.q.put(("log", _redact(self.format(record))))
+            except Exception:
+                # Log nunca pode derrubar a thread da interface.
+                self.handleError(record)
 
 
 def _companion_app_path():
@@ -72,9 +97,14 @@ class App(tk.Tk):
     def _setup_logging(self):
         root = logging.getLogger()
         root.setLevel(logging.INFO)
-        file_handler = logging.FileHandler(config.LOG_PATH, encoding="utf-8")
-        file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
-        root.addHandler(file_handler)
+        try:
+            file_handler = logging.FileHandler(config.LOG_PATH, encoding="utf-8")
+            file_handler.setFormatter(_RedactingFormatter(
+                "%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+            root.addHandler(file_handler)
+        except OSError as exc:
+            # Pasta somente leitura / log travado: a interface continua abrindo.
+            self.q.put(("log", f"Aviso: não consegui gravar o log em {config.LOG_PATH} ({exc})."))
         root.addHandler(QueueLogHandler(self.q))
 
     # ------------------------------------------------------------------- tela
@@ -307,7 +337,7 @@ class App(tk.Tk):
         # depois de ler o que já estava marcado na planilha.
         try:
             database.init_db()
-            path = export_xlsx.sync_spreadsheet(days=int(self.filters.get("dias", 7)))
+            path = export_xlsx.sync_spreadsheet(days=config.dias_do_filtro(self.filters))
         except Exception as exc:
             logging.getLogger("buscavagas").warning("Não consegui atualizar a planilha: %s", exc)
             path = config.XLSX_PATH
@@ -334,22 +364,62 @@ class App(tk.Tk):
             botao.config(state=estado)
         self.btn_run.config(text="Buscando... aguarde" if busy else "🔍  Buscar vagas")
 
+    @staticmethod
+    def _filter_problems(filters: dict) -> list:
+        """
+        Validação "extra" via config.validate_filters (quando já existir).
+        A coleta da tela (self._collect) continua sendo a primeira barreira.
+        """
+        fn = getattr(config, "validate_filters", None)
+        if not callable(fn):
+            return []
+        try:
+            resultado = fn(filters) or []
+        except Exception as exc:  # validação nunca deve impedir a busca de funcionar
+            logging.getLogger("buscavagas").warning(
+                "Não consegui validar os filtros automaticamente (%s).", exc)
+            return []
+        if isinstance(resultado, str):
+            return [resultado]
+        return [str(item) for item in resultado]
+
     def _on_run(self):
         try:
             self.filters = self._collect()
         except ValueError as exc:
             messagebox.showwarning("Atenção", str(exc))
             return
-        config.save_filters(self.filters)
+
+        problemas = self._filter_problems(self.filters)
+        if problemas:
+            messagebox.showerror(
+                "Confira os filtros",
+                "Encontrei problema(s) nos filtros — a busca não foi iniciada:\n\n"
+                + "\n".join(f"• {p}" for p in problemas))
+            return
+
+        try:
+            config.save_filters(self.filters)
+        except OSError as exc:
+            messagebox.showerror("Não consegui salvar os filtros",
+                                 f"{exc}\n\nA busca pode continuar, mas os filtros "
+                                 "não serão lembrados na próxima vez.")
         self._set_busy(True)
         threading.Thread(target=self._worker, args=(self.filters,), daemon=True).start()
 
     def _worker(self, filters):
+        # KeyboardInterrupt é BaseException: não é engolido aqui de propósito.
         try:
-            self.q.put(("done", pipeline.run_search(filters)))
+            result = pipeline.run_search(filters)
         except Exception as exc:  # qualquer erro vira mensagem amigável na tela
             logging.getLogger("buscavagas").exception("Erro durante a busca")
-            self.q.put(("error", str(exc)))
+            self.q.put(("error", _redact(str(exc)) or exc.__class__.__name__))
+        else:
+            self.q.put(("done", result))
+        finally:
+            # Garante que a UI nunca fique travada em "Buscando..." mesmo se
+            # algo falhar antes de colocar a mensagem na fila (ex.: erro de log).
+            self.q.put(("worker-fim", None))
 
     # ---------------------------------------------------------- fila -> tela
     def _append(self, text: str):
@@ -371,8 +441,14 @@ class App(tk.Tk):
                     messagebox.showerror(
                         "Ocorreu um erro",
                         f"{payload}\n\nDetalhes no arquivo buscavagas.log (na pasta do programa).")
+                elif kind == "worker-fim":
+                    # Rede de segurança: a thread terminou de qualquer jeito,
+                    # então os botões voltam a funcionar mesmo sem "done"/"error".
+                    self._set_busy(False)
         except queue.Empty:
             pass
+        except Exception:  # erro inesperado na UI não pode parar o _poll
+            logging.getLogger("buscavagas").exception("Erro ao atualizar a janela")
         self._poll_id = self.after(150, self._poll)
 
     def destroy(self):
@@ -384,11 +460,17 @@ class App(tk.Tk):
 
     def _finish(self, result: dict):
         self._set_busy(False)
-        msg = (f"Busca concluída!\n\nVagas novas: {result['novas']}\n"
-               f"(aprovadas pelo filtro: {result['aprovadas']} de {result['coletadas']} coletadas)\n\n"
-               "Abrir a planilha agora?")
-        if messagebox.askyesno("Pronto!", msg):
-            open_file(result["planilha"])
+        try:
+            msg = (f"Busca concluída!\n\nVagas novas: {result['novas']}\n"
+                   f"(aprovadas pelo filtro: {result['aprovadas']} de {result['coletadas']} "
+                   "coletadas)\n\nAbrir a planilha agora?")
+            if messagebox.askyesno("Pronto!", msg):
+                open_file(result["planilha"])
+        except Exception as exc:
+            logging.getLogger("buscavagas").warning("Não consegui abrir a planilha (%s).", exc)
+            messagebox.showinfo(
+                "Busca concluída",
+                f"A planilha foi gerada em:\n{result.get('planilha') or config.XLSX_PATH}")
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ automação. Veja _wait_for_click().
 
 import logging
 import os
+import re
 import sys
 import time
 import tkinter as tk
@@ -41,6 +42,25 @@ CARTA_INFO = (
     "(fica salva — não pede de novo). O texto do currículo e da vaga é enviado ao Google "
     "para gerar a carta."
 )
+
+# Mensagens de log/erro nunca devem expor e-mail ou chave de API.
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+_API_KEY_RE = re.compile(r"AIza[0-9A-Za-z_\-]{10,}")
+
+
+def _mask_secrets(texto) -> str:
+    """Troca e-mails e chaves do Gemini por *** em textos mostrados ao usuário."""
+    if not texto:
+        return str(texto or "")
+    texto = _EMAIL_RE.sub("***", str(texto))
+    return _API_KEY_RE.sub("***", texto)
+
+
+class _MaskingFormatter(logging.Formatter):
+    """Formatter que mascara e-mail/chave também no arquivo de log."""
+
+    def format(self, record):
+        return _mask_secrets(super().format(record))
 
 
 class App(tk.Tk):
@@ -73,10 +93,14 @@ class App(tk.Tk):
         """
         root = logging.getLogger()
         root.setLevel(logging.INFO)
-        handler = logging.FileHandler(config.LOG_PATH, encoding="utf-8")
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
-        root.addHandler(handler)
+        try:
+            handler = logging.FileHandler(config.LOG_PATH, encoding="utf-8")
+            handler.setFormatter(_MaskingFormatter(
+                "%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+            root.addHandler(handler)
+        except OSError:
+            # Sem permissão de escrita: a janela ainda abre; os avisos vão para a tela.
+            pass
 
     def _build(self):
         pad = {"padx": 12, "pady": 6}
@@ -187,10 +211,21 @@ class App(tk.Tk):
         import webbrowser
         webbrowser.open(url)
 
-    def _on_save_profile(self):
+    def _save_profile(self) -> bool:
+        """Salva perfil.json; devolve False (com aviso na tela) se não conseguir."""
         self.profile = self._collect_profile()
-        config.save_profile(self.profile)
-        messagebox.showinfo("Pronto", "Seus dados foram salvos.")
+        try:
+            config.save_profile(self.profile)
+        except OSError as exc:
+            messagebox.showerror(
+                "Não consegui salvar seus dados",
+                f"{exc}\n\nVerifique se a pasta do programa permite gravação.")
+            return False
+        return True
+
+    def _on_save_profile(self):
+        if self._save_profile():
+            messagebox.showinfo("Pronto", "Seus dados foram salvos.")
 
     def _read_marks_from_spreadsheet(self):
         """Traz para o banco o que foi marcado na planilha (ex.: Auto-preencher = Sim)."""
@@ -215,7 +250,7 @@ class App(tk.Tk):
     # ---------------------------------------------------------------- log/UI
     def _log(self, text: str):
         self.log.config(state="normal")
-        self.log.insert("end", text + "\n")
+        self.log.insert("end", _mask_secrets(text) + "\n")
         self.log.see("end")
         self.log.config(state="disabled")
         self.update()
@@ -224,8 +259,18 @@ class App(tk.Tk):
         self._advance_choice = opcao
 
     def _on_abort(self):
+        # Seguro em qualquer momento: só sinaliza parada ENTRE vagas; a vaga
+        # atual continua aberta para você terminar (ou não) manualmente.
+        if not self._running:
+            return
         self._abort = True
-        self._advance_choice = "pular"  # libera o laço de espera atual, se houver
+        if self._advance_choice is None:
+            self._advance_choice = "pular"  # libera o laço de espera atual
+        try:
+            self.btn_parar.config(state="disabled")
+            self.lbl_status.config(text="Parando depois desta vaga — nada é enviado sozinho.")
+        except tk.TclError:
+            pass
 
     def _get_resume_text(self, pdf_path: str):
         """Extrai o texto do currículo, reaproveitando se o caminho não mudou."""
@@ -251,8 +296,8 @@ class App(tk.Tk):
             messagebox.showwarning("Falta o currículo", "Escolha o arquivo do seu currículo em PDF.")
             return
 
-        self.profile = self._collect_profile()
-        config.save_profile(self.profile)
+        # Se não der para salvar, seguimos com os dados da tela (o aviso é mostrado).
+        self._save_profile()
 
         self.btn_carta.config(state="disabled", text="Gerando carta...")
         self.update()
@@ -271,8 +316,8 @@ class App(tk.Tk):
                 "Esse recurso precisa de pacotes extras. Peça para instalar:\n"
                 "pip install -U google-genai pypdf python-docx")
         except Exception as exc:
-            self._log(f"Não consegui gerar a carta: {exc}")
-            messagebox.showerror("Não consegui gerar a carta", str(exc))
+            self._log(f"Não consegui gerar a carta: {_mask_secrets(exc)}")
+            messagebox.showerror("Não consegui gerar a carta", _mask_secrets(exc))
         finally:
             self.btn_carta.config(state="normal", text="✍️  Gerar carta personalizada")
 
@@ -292,8 +337,8 @@ class App(tk.Tk):
             messagebox.showwarning("Falta o currículo", "Escolha o arquivo do seu currículo em PDF.")
             return
 
-        self.profile = self._collect_profile()
-        config.save_profile(self.profile)
+        # Se não der para salvar, seguimos com os dados da tela (o aviso é mostrado).
+        self._save_profile()
 
         self.btn_curriculo.config(state="disabled", text="Gerando currículo...")
         self.update()
@@ -321,8 +366,8 @@ class App(tk.Tk):
                 "Esse recurso precisa de pacotes extras. Peça para instalar:\n"
                 "pip install -U google-genai pypdf python-docx")
         except Exception as exc:
-            self._log(f"Não consegui gerar o currículo: {exc}")
-            messagebox.showerror("Não consegui gerar o currículo", str(exc))
+            self._log(f"Não consegui gerar o currículo: {_mask_secrets(exc)}")
+            messagebox.showerror("Não consegui gerar o currículo", _mask_secrets(exc))
         finally:
             self.btn_curriculo.config(state="normal", text="📄  Gerar currículo adaptado")
 
@@ -346,10 +391,21 @@ class App(tk.Tk):
         if not self.profile["nome_completo"] or not self.profile["email"]:
             messagebox.showwarning("Faltam dados", "Preencha pelo menos nome completo e e-mail.")
             return
-        config.save_profile(self.profile)
+        try:
+            config.save_profile(self.profile)
+        except OSError as exc:
+            messagebox.showerror(
+                "Não consegui salvar seus dados",
+                f"{exc}\n\nVerifique se a pasta do programa permite gravação.")
+            return
 
         self._read_marks_from_spreadsheet()
-        jobs = database.get_marked_for_apply()
+        try:
+            jobs = database.get_marked_for_apply()
+        except Exception as exc:  # banco corrompido/bloqueado: aviso em vez de traceback
+            messagebox.showerror("Não consegui ler as vagas",
+                                 _mask_secrets(exc))
+            return
         if not jobs:
             messagebox.showinfo(
                 "Nada para fazer",
@@ -359,6 +415,7 @@ class App(tk.Tk):
         self._abort = False
         self._running = True
         self.btn_start.config(state="disabled")
+        self.btn_parar.config(state="normal")
         self.btn_marcar.config(state="disabled")
         self.btn_pular.config(state="disabled")
         self.flow.grid(row=4, column=0, sticky="ew", padx=12, pady=6)
@@ -369,18 +426,34 @@ class App(tk.Tk):
                 "Erro durante as candidaturas")
             messagebox.showerror(
                 "Ocorreu um erro",
-                f"{exc}\n\nDetalhes no arquivo {config.LOG_PATH} (na pasta do programa).")
+                f"{_mask_secrets(exc)}\n\nDetalhes no arquivo {config.LOG_PATH} "
+                "(na pasta do programa).")
         finally:
-            self.flow.grid_remove()
-            self.btn_start.config(state="normal")
+            # try/finally: mesmo em erro, botões e painel voltam ao normal.
             self._running = False
-            self._update_spreadsheet()
-            self._refresh_count()
+            self._current_job = None
+            try:
+                self.flow.grid_remove()
+                for botao in (self.btn_marcar, self.btn_pular, self.btn_carta,
+                              self.btn_curriculo, self.btn_parar):
+                    botao.config(state="disabled")
+                self.btn_start.config(state="normal")
+                self.btn_parar.config(state="normal")
+                self.lbl_status.config(text="")
+            except tk.TclError:
+                pass  # janela já foi fechada
+            try:
+                self._update_spreadsheet()
+                self._refresh_count()
+            except Exception:
+                # Nunca deixar um erro de atualização virar traceback no console.
+                logging.getLogger("buscavagas.candidatar").exception(
+                    "Erro ao atualizar a planilha/contador no fim do fluxo")
 
     def _update_spreadsheet(self):
         """Regera a planilha para ela já mostrar o que você marcou aqui."""
         try:
-            path = export_xlsx.sync_spreadsheet(days=int(config.load_filters().get("dias", 7)))
+            path = export_xlsx.sync_spreadsheet(days=config.dias_do_filtro(config.load_filters()))
             self._log(f"Planilha atualizada: {path}")
         except Exception as exc:
             self._log(f"Não consegui atualizar a planilha agora ({exc}). "
@@ -419,32 +492,33 @@ class App(tk.Tk):
                     self._log(f"\n--- Vaga {i}/{len(jobs)}: {job['titulo']} ({job['empresa']}) ---")
 
                     r = apply_core.open_and_fill(context, job, self.profile)
-                    if r["erro"]:
-                        self._log(f"Não consegui abrir automaticamente ({r['erro']}). "
-                                  "A aba ficou aberta para você preencher na mão.")
-                    elif r["preencheu"]:
-                        extra = " e anexei o currículo" if r["curriculo"] else ""
-                        self._log(f"Preenchi {r['campos']} campo(s) de contato{extra}. "
-                                  "Revise as perguntas da vaga e envie você mesmo no navegador.")
-                    else:
-                        self._log("Não é Candidatura Simplificada do Indeed — preencha manualmente "
-                                  "na aba que abri.")
+                    try:
+                        if r["erro"]:
+                            self._log(f"Não consegui abrir automaticamente ({_mask_secrets(r['erro'])}). "
+                                      "A aba ficou aberta para você preencher na mão.")
+                        elif r["preencheu"]:
+                            extra = " e anexei o currículo" if r["curriculo"] else ""
+                            self._log(f"Preenchi {r['campos']} campo(s) de contato{extra}. "
+                                      "Revise as perguntas da vaga e envie você mesmo no navegador.")
+                        else:
+                            self._log("Não é Candidatura Simplificada do Indeed — preencha "
+                                      "manualmente na aba que abri.")
 
-                    self._log("Quando terminar (enviar ou não), escolha uma opção abaixo.")
-                    escolha = self._wait_for_click()
+                        self._log("Quando terminar (enviar ou não), escolha uma opção abaixo.")
+                        escolha = self._wait_for_click()
 
-                    if escolha == "marcar":
-                        database.apply_statuses({job["id"]: config.STATUS_CANDIDATEI})
-                        self._log("Marcada como Candidatei.")
-                    else:
-                        self._log("Deixei como estava; marque na planilha se mudar de ideia.")
-
-                    apply_core.close_pages(r)
-                    self.btn_marcar.config(state="disabled")
-                    self.btn_pular.config(state="disabled")
-                    self.btn_carta.config(state="disabled")
-                    self.btn_curriculo.config(state="disabled")
-                    self._current_job = None
+                        if escolha == "marcar":
+                            database.apply_statuses({job["id"]: config.STATUS_CANDIDATEI})
+                            self._log("Marcada como Candidatei.")
+                        else:
+                            self._log("Deixei como estava; marque na planilha se mudar de ideia.")
+                    finally:
+                        # Abas sempre fechadas, mesmo se você fechar a janela no meio.
+                        apply_core.close_pages(r)
+                        self._current_job = None
+                        for botao in (self.btn_marcar, self.btn_pular,
+                                      self.btn_carta, self.btn_curriculo):
+                            botao.config(state="disabled")
             finally:
                 context.close()
 

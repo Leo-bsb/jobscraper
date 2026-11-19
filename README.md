@@ -6,7 +6,9 @@ Dois programas:
 - **CandidatarVagas** — ajuda a preencher o Easy Apply do Indeed para as vagas
   marcadas na planilha, sem nunca enviar por você.
 
-Sem LLM, sem servidor — tudo roda localmente.
+A busca e o filtro não usam LLM nem servidor — rodam localmente. Só os
+recursos opcionais de carta/currículo adaptado chamam a API do Gemini (e
+apenas quando você clica no botão).
 
 ## Múltiplas cidades / região metropolitana
 O campo `cidades` é a lista de cidades **aceitas** — só entram vagas cujo local
@@ -142,6 +144,11 @@ alerta na interface, para você revisar antes de usar. Essa checagem é
 heurística (compara palavras-chave, não é prova formal) — sempre releia o
 resultado antes de enviar para uma empresa.
 
+Os arquivos gerados ficam em `cartas/` e `curriculos_adaptados/`, com nome
+baseado em empresa + título da vaga. Gerar de novo para a mesma vaga
+**sobrescreve** o arquivo anterior (não cria versões numeradas) — se quiser
+guardar mais de uma versão, renomeie antes de gerar outra.
+
 **Privacidade:** para gerar a carta ou o currículo, o texto do currículo e a
 descrição da vaga são enviados à API do Gemini. Veja a política de uso de
 dados em https://ai.google.dev/gemini-api/terms se isso for uma preocupação.
@@ -153,16 +160,83 @@ python app.py               # interface de busca (a mesma do BuscaVagas.exe)
 python candidatar_app.py    # interface de candidatura assistida
 python main.py              # linha de comando: busca + planilha
 python main.py --only-export
+python main.py --days 30    # janela de busca (1 a 90 dias)
 python main.py --email      # e-mail com as vagas novas (variáveis JOBSCRAPER_SMTP_*)
 ```
 Filtros ficam em `filtros.json`, perfil do candidato em `perfil.json` (ambos
 editáveis à mão ou pela interface).
+
+### Opções de linha de comando
+```bash
+python main.py --check              # valida filtros, perfil, perfis prontos e pasta base
+python main.py --dry-run            # mostra o plano de consultas (sites x termos x locais)
+python main.py --days 30            # sobrescreve a janela de dias (1 a 90)
+python main.py --only-export        # não busca; só regera a planilha
+python main.py --email              # busca e envia e-mail com as vagas novas
+python main.py --log-level DEBUG    # DEBUG, INFO (padrão), WARNING ou ERROR
+python main.py --version            # mostra a versão
+```
+
+- **`--check`**: não busca nada. Confere o `filtros.json` (inclusive
+  `sites`, `termos_busca`, `dias`, `alcance_km`), os arquivos de
+  `perfis/`, se a pasta do programa aceita gravação e, se `perfil.json`
+  existir, se os dados básicos da candidatura assistida estão coerentes.
+  Imprime um relatório em português e termina com código **2** se houver
+  problema, **0** se estiver tudo certo. Bom para rodar antes da primeira
+  busca ou depois de editar os filtros à mão.
+- **`--dry-run`**: monta o mesmo plano de consultas que a busca faria
+  (`sites` × `termos_busca` × local, mais as buscas nacionais de home
+  office), com a contagem e o raio — **sem acessar a rede**. Útil para
+  estimar quanto tempo a busca vai levar.
+- **`--log-level`**: controla o detalhamento do `buscavagas.log` e do
+  console. Se o arquivo de log não puder ser gravado (pasta somente
+  leitura), o programa avisa e continua só com as mensagens na tela.
+- **`--version`**: imprime a versão de `config.VERSION` e sai.
+- **`--days N`**: usa N dias como janela (o mesmo limite do `filtros.json`:
+  1 a 90). Fora da faixa, o comando termina com código 2 e não busca.
+- **`--only-export`**: não acessa os sites; só relê o banco e regera a
+  planilha. **`--email`**: ao terminar uma busca, envia o resumo por e-mail
+  (precisa das variáveis `JOBSCRAPER_SMTP_*`).
 
 ## Testes
 Sem rede, sem Excel, sem navegador — usa só `unittest` da biblioteca padrão:
 ```bash
 python -m unittest discover -s tests -t .
 ```
+
+## Qualidade/CI
+- Os testes rodam **sem rede**, sem abrir janelas e sem Playwright/pandas:
+  só `unittest` + `openpyxl`.
+- `.github/workflows/tests.yml` roda a suíte em todo `push`/`pull_request`
+  (Ubuntu, Python 3.12), instalando apenas `openpyxl`.
+- `.github/workflows/build_exe.yml` e o `build_exe.bat` rodam os testes
+  **antes** do PyInstaller, para não publicar um `.exe` quebrado.
+- Antes de abrir um chamado/issue, rode `python main.py --check` — ele
+  costuma apontar o problema (filtro vazio, site inválido, pasta sem
+  permissão de escrita).
+
+## Privacidade e segurança
+- **`perfil.json`** guarda nome, e-mail, telefone, o caminho do currículo e a
+  chave do Gemini. Ele está no `.gitignore` e **não deve ser commitado nem
+  compartilhado** — é dado pessoal. Em Linux/macOS ele é gravado com permissão
+  `600` (só o dono lê); no Windows valem as permissões da pasta. A chave do
+  Gemini nunca aparece em mensagens de erro/log (é mascarada, inclusive no
+  `buscavagas.log`), e e-mails também são mascarados nos logs das interfaces.
+- **`vagas_da_semana.xlsx`** e `vagas.db` contêm as vagas coletadas
+  (empresa, título, link, descrição) e o que você marcou. Também estão no
+  `.gitignore`; trate como dado pessoal do seu histórico de candidaturas.
+- **A candidatura assistida nunca envia sozinha**: ela só abre a vaga,
+  preenche campos de contato vazios e (se o arquivo existir e for
+  PDF/DOC/DOCX) anexa o currículo. O botão de enviar é sempre seu. Essa
+  regra está explícita em `apply_core.py` (`NEVER_SUBMIT`).
+- Links de vaga só são abertos se forem `http`/`https`; `javascript:`,
+  `file:` e afins são recusados.
+- Para gerar carta/currículo adaptado, o texto do currículo e a descrição da
+  vaga são enviados à API do Gemini. O texto da vaga é tratado como **dado
+  não confiável** (delimitado por tags, com instrução para o modelo ignorar
+  comandos vindos dali); ocorrências das próprias tags delimitadoras no
+  conteúdo (ex.: uma descrição contendo `</descricao_vaga>`) são removidas
+  antes do envio, e o texto é truncado em ~20.000 caracteres.
 
 ## Gerar os .exe
 Precisa ser feito no Windows (o PyInstaller não gera .exe a partir de Linux/Mac):
@@ -182,3 +256,9 @@ informações → Executar assim mesmo*.
 - O programa já espera tempos aleatórios e tenta de novo (até 3x) com espera crescente.
 - Desmarque o site que mais recusa (LinkedIn/Glassdoor costumam ser os piores).
 - Ajuste `DELAY_*` / `RETRY_*` em `config.py`, ou reduza `resultados_por_busca`.
+
+## Documentação da revisão
+- [`docs/REVISAO_E_MELHORIAS.md`](docs/REVISAO_E_MELHORIAS.md): o que foi
+  auditado, problemas encontrados e correções (versão 2026.11).
+- [`docs/LIMITACOES_E_PENDENCIAS.md`](docs/LIMITACOES_E_PENDENCIAS.md): o que
+  não foi possível validar nesta máquina, riscos residuais e decisões pendentes.

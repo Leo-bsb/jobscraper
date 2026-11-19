@@ -7,9 +7,14 @@ py -3.12 -m pip install -r requirements-build.txt
 if errorlevel 1 goto erro
 
 echo.
+echo === Rodando os testes (antes de empacotar) ===
+py -3.12 -m unittest discover -s tests -t .
+if errorlevel 1 goto erro
+
+echo.
 echo === Gerando BuscaVagas.exe ===
 py -3.12 -m PyInstaller --noconfirm --clean --onefile --windowed --name BuscaVagas ^
-  --collect-all jobspy --collect-all tls_client app.py
+  --collect-all jobspy --collect-all tls_client --collect-all curl_cffi app.py
 if errorlevel 1 goto erro
 
 echo.

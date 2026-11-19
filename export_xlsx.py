@@ -19,6 +19,7 @@ import json
 import logging
 import os
 from datetime import datetime
+from urllib.parse import urlparse
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.formatting.rule import FormulaRule
@@ -63,10 +64,68 @@ GREEN = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
 GRAY = PatternFill(start_color="E7E6E6", end_color="E7E6E6", fill_type="solid")
 BLUE = PatternFill(start_color="DDEBF7", end_color="DDEBF7", fill_type="solid")
 
+# Limite de caracteres por célula no Excel. Textos maiores que isso fariam o
+# openpyxl gerar um arquivo que o Excel se recusa a abrir.
+MAX_CELL_CHARS = 32767
+# Se o dado raspado começa com um destes, o Excel pode interpretá-lo como
+# fórmula/valor especial ao abrir a planilha (injeção de fórmula).
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _safe_cell(value):
+    """
+    Converte um valor raspado em conteúdo seguro para a célula.
+
+    - números e booleanos continuam como estão (não são texto);
+    - textos são cortados no limite de 32767 caracteres do Excel.
+
+    A proteção contra injeção de fórmula (textos que começam com = + - @
+    TAB ou CR) NÃO é feita aqui com apóstrofo: ela é aplicada em `_write_cell`,
+    que grava o texto original como string (`data_type="s"`) e marca
+    `quotePrefix`, para o Excel exibir o conteúdo sem o apóstrofo visível.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, bool) or isinstance(value, (int, float)):
+        return value
+    if not isinstance(value, str):
+        return value
+    return value[:MAX_CELL_CHARS]
+
+
+def _write_cell(ws, row: int, column: int, value):
+    """
+    Grava `value` na célula sem permitir que o Excel o trate como fórmula.
+
+    Antes o texto recebia um apóstrofo literal na frente ("'=1+1"), o que
+    aparecia na planilha. Agora mantemos o conteúdo original, gravamos como
+    string e usamos `quotePrefix` (o mesmo recurso que o Excel usa quando
+    você digita um apóstrofo): a célula continua sendo texto e o apóstrofo
+    não é exibido. O resultado é lido de volta pelo openpyxl sem alteração.
+    """
+    cell = ws.cell(row=row, column=column)
+    dados = _safe_cell(value)
+    cell.value = dados
+    if isinstance(dados, str) and dados[:1] in _FORMULA_PREFIXES:
+        cell.data_type = "s"     # nunca salvamos como <f> (fórmula)
+        cell.quotePrefix = True  # Excel trata/exibe como texto, sem apóstrofo
+    return cell
+
+
+def _is_http_url(value) -> bool:
+    """Só criamos hyperlink para http/https (evita javascript:, file: etc.)."""
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        parsed = urlparse(value.strip())
+    except ValueError:
+        return False
+    return parsed.scheme.lower() in ("http", "https") and bool(parsed.netloc)
+
 
 def _write_sheet(ws, jobs: list) -> None:
     for col, (_, title, width) in enumerate(COLUMNS, start=1):
-        cell = ws.cell(row=1, column=col, value=title)
+        cell = ws.cell(row=1, column=col, value=_safe_cell(title))
         cell.fill = HEADER_FILL
         cell.font = Font(color="FFFFFF", bold=True)
         cell.alignment = Alignment(horizontal="center", vertical="center")
@@ -74,10 +133,11 @@ def _write_sheet(ws, jobs: list) -> None:
 
     for row, job in enumerate(jobs, start=2):
         for col, (field, _, _) in enumerate(COLUMNS, start=1):
-            cell = ws.cell(row=row, column=col, value=job.get(field, ""))
+            raw_value = job.get(field, "")
+            cell = _write_cell(ws, row, col, raw_value)
             cell.alignment = Alignment(vertical="top")
-            if field == "link" and job.get(field):
-                cell.hyperlink = job[field]
+            if field == "link" and _is_http_url(raw_value):
+                cell.hyperlink = str(raw_value).strip()[:MAX_CELL_CHARS]
                 cell.font = Font(color="0563C1", underline="single")
 
     for col in range(HIDDEN_FROM + 1, len(COLUMNS) + 1):
@@ -123,17 +183,45 @@ def _write_sheet(ws, jobs: list) -> None:
         area, FormulaRule(formula=[f'${col_auto}2="{config.AUTOFILL_SIM}"'], fill=BLUE))
 
 
+def _free_alt_path(path: str) -> str:
+    """Nome alternativo com timestamp que ainda não existe (evita sobrescrever)."""
+    base, ext = os.path.splitext(path)
+    if not ext:
+        ext = ".xlsx"
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    for tentativa in range(100):
+        sufixo = f"_{stamp}" if tentativa == 0 else f"_{stamp}_{tentativa}"
+        alt = f"{base}{sufixo}{ext}"
+        if not os.path.exists(alt):
+            return alt
+    return f"{base}_{stamp}_{os.getpid()}{ext}"
+
+
 def _save(wb: Workbook, path: str) -> str:
     try:
         wb.save(path)
         return path
     except PermissionError:
-        alt = path.replace(".xlsx", f"_{datetime.now():%H%M%S}.xlsx")
-        wb.save(alt)
         logger.warning(
-            "A planilha estava ABERTA no Excel, então salvei em outro arquivo: %s. "
-            "Feche o Excel e busque de novo para que suas marcações sejam lidas.", alt)
-        return alt
+            "A planilha estava ABERTA no Excel. Vou salvar em um arquivo alternativo.")
+    except OSError as exc:
+        logger.warning("Não consegui salvar a planilha em %s (%s). "
+                       "Vou tentar um nome alternativo.", path, exc)
+
+    alt = _free_alt_path(path)
+    try:
+        wb.save(alt)
+    except OSError as exc:
+        logger.error("Não foi possível salvar a planilha em %s (%s). "
+                     "Feche o arquivo no Excel e tente novamente.", alt, exc)
+        raise OSError(
+            "Não foi possível salvar a planilha em '%s' nem em '%s'. "
+            "Feche o arquivo no Excel e tente novamente." % (path, alt)
+        ) from exc
+    logger.warning(
+        "Planilha salva em outro arquivo: %s. Feche o Excel e busque de novo "
+        "para que suas marcações sejam lidas.", alt)
+    return alt
 
 
 AUDIT_COLUMNS = [
@@ -147,15 +235,16 @@ AUDIT_COLUMNS = [
 
 def _write_audit_sheet(ws, discarded: list) -> None:
     for col, (_, title, width) in enumerate(AUDIT_COLUMNS, start=1):
-        cell = ws.cell(row=1, column=col, value=title)
+        cell = ws.cell(row=1, column=col, value=_safe_cell(title))
         cell.fill = HEADER_FILL
         cell.font = Font(color="FFFFFF", bold=True)
         ws.column_dimensions[get_column_letter(col)].width = width
     for row, job in enumerate(discarded, start=2):
         for col, (field, _, _) in enumerate(AUDIT_COLUMNS, start=1):
-            cell = ws.cell(row=row, column=col, value=job.get(field, ""))
-            if field == "link" and job.get(field):
-                cell.hyperlink = job[field]
+            raw_value = job.get(field, "")
+            cell = _write_cell(ws, row, col, raw_value)
+            if field == "link" and _is_http_url(raw_value):
+                cell.hyperlink = str(raw_value).strip()[:MAX_CELL_CHARS]
                 cell.font = Font(color="0563C1", underline="single")
     ws.freeze_panes = "A2"
     if discarded:
@@ -165,10 +254,14 @@ def _write_audit_sheet(ws, discarded: list) -> None:
 
 def _load_discarded() -> list:
     try:
-        with open(config.DISCARDED_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
+        with open(config.DISCARDED_PATH, "r", encoding="utf-8-sig") as f:
+            dados = json.load(f)
     except (OSError, ValueError):
         return []
+    # O arquivo é gerado pelo programa, mas pode ter sido editado à mão.
+    if not isinstance(dados, list):
+        return []
+    return [item for item in dados if isinstance(item, dict)]
 
 
 def _save_discarded(discarded: list) -> None:
@@ -194,6 +287,7 @@ def export_weekly_report(days: int, path: str = None, discarded: list = None) ->
     if discarded is None:
         discarded = _load_discarded()
     else:
+        discarded = [item for item in discarded if isinstance(item, dict)]
         _save_discarded(discarded)
     pending = database.get_pending(days)
     treated = database.get_treated()
@@ -235,10 +329,39 @@ def _to_autofill(value):
     return None
 
 
+def _cell_job_id(value):
+    """Normaliza o ID lido da planilha (número ou texto) para o texto do banco."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    texto = str(value).strip()
+    return texto or None
+
+
+def _header_indexes(header) -> dict:
+    """
+    {título: índice} do cabeçalho, ignorando células vazias/None. Em caso de
+    título duplicado, mantém a PRIMEIRA ocorrência (é a coluna que o programa
+    gravou; duplicatas costumam ser cópias feitas à mão pelo usuário).
+    """
+    indexes = {}
+    for i, title in enumerate(header or ()):
+        if title is None:
+            continue
+        nome = str(title).strip()
+        if nome and nome not in indexes:
+            indexes[nome] = i
+    return indexes
+
+
 def import_statuses(path: str = None) -> int:
     """
     Lê as colunas Situação e Auto-preencher da planilha (todas as abas) e
     atualiza o banco. Retorna quantas vagas mudaram (soma das duas colunas).
+
+    Tolerante a planilhas editadas à mão: cabeçalho com células vazias,
+    linhas curtas, ID numérico/texto e cabeçalhos duplicados.
     """
     path = path or config.XLSX_PATH
     if not os.path.exists(path):
@@ -254,28 +377,41 @@ def import_statuses(path: str = None) -> int:
         for ws in wb.worksheets:
             rows = ws.iter_rows(values_only=True)
             header = next(rows, None)
-            if not header or HEADER_TITLE_ID not in header:
+            if not header:
                 continue
-            def idx(title):
-                return header.index(title) if title in header else None
+            indexes = _header_indexes(header)
+            if HEADER_TITLE_ID not in indexes:
+                continue
 
-            i_id = idx(HEADER_TITLE_ID)
+            i_id = indexes[HEADER_TITLE_ID]
             columns = [  # (coluna atual, coluna "ao gerar", conversor, destino)
-                (idx(HEADER_TITLE_STATUS), idx(HEADER_TITLE_STATUS_SNAP), _to_status, status_changes),
-                (idx(HEADER_TITLE_AUTOFILL), idx(HEADER_TITLE_AUTOFILL_SNAP), _to_autofill, autofill_changes),
+                (indexes.get(HEADER_TITLE_STATUS),
+                 indexes.get(HEADER_TITLE_STATUS_SNAP), _to_status, status_changes),
+                (indexes.get(HEADER_TITLE_AUTOFILL),
+                 indexes.get(HEADER_TITLE_AUTOFILL_SNAP), _to_autofill, autofill_changes),
             ]
             for row in rows:
-                if len(row) <= i_id or not row[i_id]:
+                if not row or len(row) <= i_id:
                     continue
-                job_id = str(row[i_id])
+                job_id = _cell_job_id(row[i_id])
+                if job_id is None:
+                    continue
                 for i_cur, i_snap, convert, changes in columns:
                     if i_cur is None or len(row) <= i_cur:
                         continue
                     value = convert(row[i_cur])
-                    if not value:
+                    if value is None:
+                        # Célula vazia/irreconhecível: não temos como saber o
+                        # que o usuário quis dizer; mantém o banco como está.
                         continue
-                    if i_snap is not None and len(row) > i_snap and convert(row[i_snap]) == value:
-                        continue  # você não mexeu nesta célula: o banco continua valendo
+                    if i_snap is not None and len(row) > i_snap:
+                        snap = convert(row[i_snap])
+                        if snap == value:
+                            continue  # você não mexeu nesta célula
+                        # Se `snap` for irreconhecível (None), a coluna oculta
+                        # não serve de referência; o valor atual válido vence.
+                        # Já o caso "atual irreconhecível" foi descartado acima,
+                        # então nunca aplicamos lixo nos dois lados.
                     changes[job_id] = value
     finally:
         wb.close()

@@ -1,6 +1,9 @@
-python-jobspy>=1.1.80
-pandas>=2.0.0
-openpyxl>=3.1.0
+# Dependências da busca de vagas.
+# Limites superiores prudentes: evitam que uma versão maior (com mudanças
+# incompatíveis) quebre o programa numa instalação nova.
+python-jobspy>=1.1.80,<2
+pandas>=2.0.0,<3
+openpyxl>=3.1.0,<4
 
 # Opcional: só necessário para a candidatura assistida (applier.py / candidatar_app.py)
 # pip install playwright && playwright install chromium
