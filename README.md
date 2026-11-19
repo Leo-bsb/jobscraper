@@ -39,6 +39,12 @@ Uma vaga só entra se:
 2. tiver pelo menos **1 termo forte** (`python`, `sql`, `power bi`, `etl`,
    `enfermag`, `coren`...) **e** pelo menos `minimo_de_termos` termos no total
    (fortes + fracos somados, padrão 2);
+   - **opcional (`exigir_termo_forte_no_titulo`)**: o termo forte precisa estar
+     no **título** da vaga. Em busca real por "analista de dados", vagas de
+     RH/jurídico citavam "banco de dados"/"dados pessoais" só na descrição
+     (LGPD) e passavam; com a opção ligada a precisão estimada subiu de ~36%
+     para ~88% (28 → 8 vagas), ao custo de menos resultados. Fica desligada por
+     padrão para não reduzir o alcance de quem quer ver tudo;
 3. o local bater com alguma das **cidades aceitas**, **ou** o próprio texto da
    vaga mencionar home office/remoto (se `aceitar_home_office_todo_brasil`) —
    desde que a vaga **não** seja híbrida e o texto não negue o remoto ("não é
@@ -262,3 +268,7 @@ informações → Executar assim mesmo*.
   auditado, problemas encontrados e correções (versão 2026.11).
 - [`docs/LIMITACOES_E_PENDENCIAS.md`](docs/LIMITACOES_E_PENDENCIAS.md): o que
   não foi possível validar nesta máquina, riscos residuais e decisões pendentes.
+- [`docs/ANALISE_VAGAS_REAIS.md`](docs/ANALISE_VAGAS_REAIS.md): teste de usuário
+  com coleta real no Indeed (dados júnior e enfermagem), precisão e defeitos.
+- [`docs/ESTUDO_SAAS.md`](docs/ESTUDO_SAAS.md): estudo de viabilidade do
+  produto como SaaS (mercado, preços, arquitetura, riscos legais e roadmap).

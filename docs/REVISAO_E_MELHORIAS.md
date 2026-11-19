@@ -43,6 +43,10 @@ as mudanças. Ele acompanha o commit que elevou a versão para **2026.11**.
 - `config.py`: validação (`validate_filters`), coerção de tipos
   (`coerce_filters`), escrita atômica, `dias_do_filtro`, permissões do perfil,
   leitura tolerante a BOM e `SMTP_PORT` seguro.
+- Calibração vinda do **teste real** (ver `docs/ANALISE_VAGAS_REAIS.md`):
+  `pl` (pleno) passou a ser proibido no título, `bi` virou termo forte e foi
+  criada a opção `exigir_termo_forte_no_titulo` (checkbox na UI), que elevou a
+  precisão estimada de ~36% para ~88% numa busca real por dados.
 - `scraper.py`: imports tardios (permite `--dry-run`/testes sem pandas),
   `plan_queries()` para o novo `--dry-run`, injeção de `sleep`/`fetch`,
   deduplicação por URL **e** por (título, empresa, local) normalizados, pausa
@@ -100,7 +104,7 @@ as mudanças. Ele acompanha o commit que elevou a versão para **2026.11**.
 
 | Métrica | Antes | Depois |
 |---|---|---|
-| Testes `unittest` | 45 | **256** |
+| Testes `unittest` | 45 | **259** |
 | Python 3.8 | OK | **OK** (8 skips por SO/dependências opcionais) |
 | Python 3.13 + deps completas | não executado | **OK** (3 skips POSIX) |
 | Cobertura do núcleo (config, scraper, filtering, utils, database, export_xlsx, notifier, pipeline) | 83% | **88%** |

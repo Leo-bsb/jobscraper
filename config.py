@@ -148,14 +148,19 @@ DEFAULT_FILTERS = {
         "data analyst", "cientista de dados", "engenheiro de dados",
         "analista de dados", "business intelligence", "databricks", "spark",
         "airflow", "pandas", "tableau", "looker", "snowflake", "big data",
-        "pipeline de dados", "banco de dados", "data warehouse", "data lake",
+        "pipeline de dados", "banco de dados", "data warehouse", "data lake", "bi",
         "nosql", "mineracao de dados", "ciencia de dados",
     ],
     "termos_fracos": ["desenvolv", "analis", "automac"],
     "exigir_termo_forte": True,
+    # Opcional: exige que o termo forte apareça no TÍTULO (reduz falsos
+    # positivos de vagas que só citam "dados" na descrição, ex.: LGPD).
+    "exigir_termo_forte_no_titulo": False,
     "minimo_de_termos": 2,
     # Procurados SÓ NO TÍTULO (senioridade e tipo de cargo).
-    "termos_proibidos_titulo": sorted(_LEGACY_TITLE_TERMS | {"sr", "jovem aprendiz"}),
+    # "pl" = pleno (abreviação comum nos títulos brasileiros). Entra como
+    # proibido no título porque o perfil padrão busca vagas de entrada.
+    "termos_proibidos_titulo": sorted(_LEGACY_TITLE_TERMS | {"sr", "pl", "jovem aprendiz"}),
     # Procurados no título E na descrição (use para algo que nunca serve).
     "termos_proibidos": ["digitador", "digitacao de dados"],
     "dias": 7,
@@ -310,7 +315,8 @@ _LISTAS_DE_TERMOS = (
     "termos_proibidos", "termos_proibidos_titulo",
 )
 _CAMPOS_INTEIROS = ("versao_filtros", "dias", "resultados_por_busca", "minimo_de_termos")
-_CAMPOS_BOOLEANOS = ("exigir_termo_forte", "aceitar_home_office_todo_brasil")
+_CAMPOS_BOOLEANOS = ("exigir_termo_forte", "exigir_termo_forte_no_titulo",
+                     "aceitar_home_office_todo_brasil")
 SITES_VALIDOS = ("indeed", "linkedin", "glassdoor", "google")
 
 

@@ -144,6 +144,14 @@ def evaluate(raw, filters: dict):
     if filters.get("exigir_termo_forte", True) and fortes and not achados_fortes:
         return None, "só tem termo(s) fraco(s), sem nenhum termo forte"
 
+    # Opcional (default desligado): exige que o termo forte esteja no TÍTULO.
+    # Numa busca real por "analista de dados", descrições de RH/jurídico citam
+    # "banco de dados"/"dados pessoais" (LGPD) e passavam só por isso; exigir o
+    # termo no título derrubou esses falsos positivos sem perder as vagas certas.
+    if filters.get("exigir_termo_forte_no_titulo") and fortes:
+        if not find_terms(normalize_text(titulo), fortes):
+            return None, "nenhum termo forte no título"
+
     modelo_trabalho = detect_work_model(texto_modelo)
     na_cidade = bool(find_terms(normalize_text(local), _local_terms(filters), whole_word=True))
     # Só considera home office/remoto se o PRÓPRIO TEXTO da vaga disser isso

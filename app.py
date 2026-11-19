@@ -144,6 +144,7 @@ class App(tk.Tk):
         self.var_alcance = tk.StringVar()
         self.var_minimo = tk.StringVar()
         self.var_exige_forte = tk.BooleanVar()
+        self.var_exige_forte_titulo = tk.BooleanVar()
 
         ttk.Label(box, text="Palavras para buscar nos sites (separe por vírgula). "
                             "Ex.: enfermeiro, enfermeira").grid(row=0, column=0, sticky="w")
@@ -202,10 +203,16 @@ class App(tk.Tk):
         row.grid(row=4, column=0, sticky="w", pady=2)
         ttk.Label(row, text="Quantidade mínima de palavras (fortes + fracas) na vaga:").pack(side="left")
         ttk.Spinbox(row, from_=1, to=10, width=4, textvariable=self.var_minimo).pack(side="left", padx=6)
+        forte_row = ttk.Frame(self.box2)
+        forte_row.grid(row=5, column=0, sticky="w", pady=2)
         ttk.Checkbutton(
-            self.box2, variable=self.var_exige_forte,
+            forte_row, variable=self.var_exige_forte,
             text="Exigir pelo menos uma palavra FORTE (recomendado — sem isso, vagas genéricas passam)",
-        ).grid(row=5, column=0, sticky="w", pady=2)
+        ).pack(side="left")
+        ttk.Checkbutton(
+            forte_row, variable=self.var_exige_forte_titulo,
+            text="…e que ela esteja no TÍTULO (menos vagas, mais precisão)",
+        ).pack(side="left", padx=(12, 0))
 
         ttk.Label(self.box2, text="NÃO mostrar vagas cujo TÍTULO tenha qualquer uma destas palavras "
                                    "(ex.: estagi, senior, sr):").grid(row=6, column=0, sticky="w", pady=(6, 0))
@@ -268,6 +275,7 @@ class App(tk.Tk):
         self.txt_fracos.insert("1.0", ", ".join(f.get("termos_fracos", [])))
         self.var_minimo.set(str(f.get("minimo_de_termos", 2)))
         self.var_exige_forte.set(bool(f.get("exigir_termo_forte", True)))
+        self.var_exige_forte_titulo.set(bool(f.get("exigir_termo_forte_no_titulo", False)))
         self.txt_proibidos_titulo.delete("1.0", "end")
         self.txt_proibidos_titulo.insert("1.0", ", ".join(f.get("termos_proibidos_titulo", [])))
         self.txt_proibidos.delete("1.0", "end")
@@ -314,6 +322,7 @@ class App(tk.Tk):
         except ValueError:
             raise ValueError("A quantidade mínima de palavras precisa ser um número (ex.: 2).")
         f["exigir_termo_forte"] = bool(self.var_exige_forte.get())
+        f["exigir_termo_forte_no_titulo"] = bool(self.var_exige_forte_titulo.get())
         f["termos_proibidos_titulo"] = parse_list(self.txt_proibidos_titulo.get("1.0", "end"))
         f["termos_proibidos"] = parse_list(self.txt_proibidos.get("1.0", "end"))
         f["versao_filtros"] = config.FILTERS_VERSION

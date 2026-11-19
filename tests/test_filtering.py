@@ -84,6 +84,28 @@ class EvaluateTest(unittest.TestCase):
         self.assertIsNotNone(record, motivo)
         self.assertEqual(record["faixa_salarial"], "R$ 4.000 - R$ 6.000")
 
+    def test_termo_forte_no_titulo_rejeita_so_descricao(self):
+        # Vaga de RH que só cita "banco de dados" na descrição: com a opção
+        # ligada, não passa (é o falso positivo que motivou o recurso).
+        self.filters["exigir_termo_forte_no_titulo"] = True
+        job = _job(title="Analista de Gestão de Pessoas", location="Brasília, DF",
+                   description="Rotinas de RH e consultas no banco de dados.")
+        record, motivo = filtering.evaluate(job, self.filters)
+        self.assertIsNone(record)
+        self.assertIn("no título", motivo)
+
+    def test_termo_forte_no_titulo_aceita_vaga_certa(self):
+        self.filters["exigir_termo_forte_no_titulo"] = True
+        record, motivo = filtering.evaluate(_job(location="Brasília, DF"), self.filters)
+        self.assertIsNotNone(record, motivo)
+
+    def test_termo_forte_no_titulo_desligado_mantem_comportamento(self):
+        self.filters["exigir_termo_forte_no_titulo"] = False
+        job = _job(title="Analista de Gestão de Pessoas", location="Brasília, DF",
+                   description="Rotinas de RH e consultas no banco de dados.")
+        record, _ = filtering.evaluate(job, self.filters)
+        self.assertIsNotNone(record)
+
     def test_duplicata_na_mesma_busca_e_descartada(self):
         job = _job(description="Vaga remota. Python e SQL.")
         aprovadas, descartadas, motivos = filtering.filter_jobs([job, dict(job)], self.filters)

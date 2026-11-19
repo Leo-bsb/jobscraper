@@ -44,6 +44,7 @@
     "looker",
     "snowflake",
     "big data",
+    "bi",
     "pipeline de dados",
     "banco de dados",
     "data warehouse",
@@ -58,6 +59,7 @@
     "automac"
   ],
   "exigir_termo_forte": true,
+  "exigir_termo_forte_no_titulo": false,
   "minimo_de_termos": 2,
   "termos_proibidos_titulo": [
     "almoxarifado",
@@ -76,6 +78,7 @@
     "montador",
     "motorista",
     "operador de caixa",
+    "pl",
     "promotor de vendas",
     "recepcao",
     "representante comercial",
