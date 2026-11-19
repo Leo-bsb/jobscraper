@@ -55,6 +55,18 @@ como risco residual e o que depende de uma decisão do mantenedor.
 8. **Token/credenciais**: nenhum token ou chave foi gravado no repositório. O
    `git remote` foi deixado sem credencial embutida.
 
+## 3.1. Push para o GitHub não realizado (bloqueio de permissão)
+
+O commit desta revisão (`9c38ebb`) está pronto **localmente**, mas não pôde ser
+enviado: o token disponível tem apenas leitura (`Contents: read`). O GitHub
+respondeu `403` tanto no `git push` quanto na criação de uma referência via API.
+Falta a permissão **Contents: Read and write** (e **Workflows: Read and write**,
+porque o commit altera `.github/workflows/`).
+
+Instruções completas, evidências e comandos para publicar estão em
+[`PUSH_PENDENTE.md`](../PUSH_PENDENTE.md). Há também um bundle com o histórico
+completo em `../jobscraper-2026.11.bundle`.
+
 ## 4. Decisões pendentes (mantenedor)
 
 - [ ] `--check` deve falhar (exit 2) quando `filtros.json` existe mas está
