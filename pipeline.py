@@ -114,7 +114,8 @@ def run_search(filters: dict = None, send_email: bool = False, scrape=None) -> d
         try:
             from notifier import send_daily_digest
 
-            if not send_daily_digest(novas):
+            # A planilha é o produto para boa parte dos usuários: vai anexada.
+            if not send_daily_digest(novas, attachment_path=path):
                 logger.warning("O e-mail não foi enviado; a planilha já foi gerada.")
         except Exception as exc:
             logger.exception("Falha ao enviar o e-mail: %s", exc)

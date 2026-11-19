@@ -2,8 +2,11 @@
 
 import html
 import logging
+import os
 import re
 import smtplib
+from email import encoders
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from urllib.parse import urlparse
@@ -15,6 +18,11 @@ logger = logging.getLogger("buscavagas.notifier")
 # Usado quando config.SMTP_TIMEOUT não existe. Sem timeout, um servidor SMTP
 # travado deixaria o programa parado para sempre.
 DEFAULT_SMTP_TIMEOUT = 30
+
+# Limite do anexo (base64 cresce ~33%): mantém a mensagem abaixo dos ~25 MB
+# aceitos pela maioria dos provedores.
+MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024
+XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def _esc(value) -> str:
@@ -94,12 +102,49 @@ def _recipients() -> list:
     return vistos
 
 
-def send_daily_digest(jobs: list, timeout=None) -> bool:
+def _attach_file(msg: MIMEMultipart, path: str) -> bool:
+    """
+    Anexa a planilha ao e-mail. Devolve True se anexou.
+
+    O Excel é o "produto" para muita gente (abrir, filtrar, marcar o que já
+    enviou), então o resumo por e-mail leva o arquivo junto. Falha de anexo
+    nunca impede o envio do resumo em si.
+    """
+    if not path:
+        return False
+    caminho = str(path)
+    if not os.path.isfile(caminho):
+        logger.warning("Anexo não encontrado (%s); enviando só o resumo.", os.path.basename(caminho))
+        return False
+    try:
+        tamanho = os.path.getsize(caminho)
+    except OSError as exc:
+        logger.warning("Não consegui medir o anexo (%s); enviando só o resumo.", exc)
+        return False
+    if tamanho > MAX_ATTACHMENT_BYTES:
+        logger.warning("Anexo grande demais (%d bytes); enviando só o resumo.", tamanho)
+        return False
+
+    with open(caminho, "rb") as f:
+        parte = MIMEBase("application", "vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        parte.set_payload(f.read())
+    encoders.encode_base64(parte)
+    nome = os.path.basename(caminho)
+    parte.add_header("Content-Disposition", "attachment", filename=("utf-8", "", nome))
+    msg.attach(parte)
+    return True
+
+
+def send_daily_digest(jobs: list, timeout=None, attachment_path=None) -> bool:
     """
     Envia o resumo das vagas novas. Retorna True só se o envio funcionou.
 
     `timeout` (segundos) evita que um SMTP travado pare o programa; quando não
     informado, usa config.SMTP_TIMEOUT (se existir) ou 30 s.
+
+    `attachment_path`: planilha .xlsx gerada na busca (opcional). Quando
+    informada e válida, vai anexada ao e-mail — este é o formato que muitos
+    usuários preferem: a lista filtrada com os links, pronta para abrir.
     """
     if not jobs:
         logger.info("Nenhuma vaga nova: e-mail não enviado.")
@@ -120,14 +165,23 @@ def send_daily_digest(jobs: list, timeout=None) -> bool:
         timeout = DEFAULT_SMTP_TIMEOUT
 
     remetente = config.EMAIL_FROM or config.SMTP_USER
-    msg = MIMEMultipart("alternative")
+    alternativo = MIMEMultipart("alternative")
+    # Texto primeiro, HTML depois: clientes escolhem a última alternativa
+    # que conseguem exibir.
+    alternativo.attach(MIMEText(_build_text(jobs), "plain", "utf-8"))
+    alternativo.attach(MIMEText(_build_html(jobs), "html", "utf-8"))
+
+    # Só usa "mixed" (que suporta anexo) quando há de fato um arquivo válido.
+    msg = alternativo
+    if attachment_path:
+        msg = MIMEMultipart("mixed")
+        msg.attach(alternativo)
+        if not _attach_file(msg, attachment_path):
+            msg = alternativo
+
     msg["Subject"] = f"[Vagas] {len(jobs)} nova(s)"
     msg["From"] = remetente
     msg["To"] = ", ".join(destinatarios)
-    # Texto primeiro, HTML depois: clientes escolhem a última alternativa
-    # que conseguem exibir.
-    msg.attach(MIMEText(_build_text(jobs), "plain", "utf-8"))
-    msg.attach(MIMEText(_build_html(jobs), "html", "utf-8"))
 
     try:
         with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=timeout) as server:

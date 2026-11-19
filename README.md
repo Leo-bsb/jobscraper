@@ -202,7 +202,9 @@ python main.py --version            # mostra a versão
   1 a 90). Fora da faixa, o comando termina com código 2 e não busca.
 - **`--only-export`**: não acessa os sites; só relê o banco e regera a
   planilha. **`--email`**: ao terminar uma busca, envia o resumo por e-mail
-  (precisa das variáveis `JOBSCRAPER_SMTP_*`).
+  **com a planilha `.xlsx` anexada** (precisa das variáveis
+  `JOBSCRAPER_SMTP_*`). O anexo tem limite de 15 MB; se a planilha não puder
+  ser anexada, o resumo é enviado mesmo assim.
 
 ## Testes
 Sem rede, sem Excel, sem navegador — usa só `unittest` da biblioteca padrão:

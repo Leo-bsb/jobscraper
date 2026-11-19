@@ -140,6 +140,18 @@ class PipelineTest(unittest.TestCase):
         self.assertTrue(any("e-mail" in msg for msg in resultado["erros"]))
         exportar.assert_called_once()
         email.assert_called_once()
+        # A planilha gerada vai como anexo (o formato que o usuário pediu).
+        self.assertEqual(email.call_args.kwargs.get("attachment_path"), "planilha.xlsx")
+
+    def test_email_recebe_a_planilha_anexada(self):
+        resultado, (_, _, _, _, email) = self._run(
+            _StubFrame([{"title": "vaga"}]),
+            records=[_record()],
+            send_email=True,
+        )
+        self.assertEqual(resultado["novas"], 1)
+        email.assert_called_once()
+        self.assertEqual(email.call_args.kwargs.get("attachment_path"), "planilha.xlsx")
 
     def test_falha_na_coleta_e_recuperavel(self):
         def coletor(_filters):

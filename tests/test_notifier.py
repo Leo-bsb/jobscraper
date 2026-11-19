@@ -1,6 +1,9 @@
 """Testes do envio de e-mail, sem rede (SMTP falseado)."""
 
 import email
+import os
+import shutil
+import tempfile
 import unittest
 from unittest import mock
 
@@ -182,6 +185,72 @@ class NotifierTest(unittest.TestCase):
         config.EMAIL_TO = " ; , "
         self.assertFalse(self._send([_job()]))
         self.assertEqual(_FakeSMTP.instances, [])
+
+
+class AnexoTest(unittest.TestCase):
+    """A planilha gerada é anexada ao e-mail (formato 'Excel para o usuário')."""
+
+    _CONFIG_NAMES = ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD",
+                     "EMAIL_FROM", "EMAIL_TO")
+
+    def setUp(self):
+        self._old = {nome: getattr(config, nome) for nome in self._CONFIG_NAMES}
+        config.SMTP_HOST = "smtp.exemplo.com"
+        config.SMTP_PORT = 587
+        config.SMTP_USER = "remetente@exemplo.com"
+        config.SMTP_PASSWORD = "senha-secreta"
+        config.EMAIL_FROM = "remetente@exemplo.com"
+        config.EMAIL_TO = "destino@exemplo.com"
+        self.tmp = tempfile.mkdtemp(prefix="jobscraper-anexo-")
+        _FakeSMTP.instances = []
+
+    def tearDown(self):
+        for nome, valor in self._old.items():
+            setattr(config, nome, valor)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _FakeSMTP.instances = []
+
+    def _arquivo(self, nome="vagas_da_semana.xlsx", conteudo=b"PK\x03\x04planilha"):
+        caminho = os.path.join(self.tmp, nome)
+        with open(caminho, "wb") as f:
+            f.write(conteudo)
+        return caminho
+
+    def _mensagem(self):
+        with mock.patch.object(notifier.smtplib, "SMTP", _FakeSMTP):
+            enviado = notifier.send_daily_digest(
+                [_job()], attachment_path=self._caminho)
+        self.assertTrue(enviado)
+        return email.message_from_string(_FakeSMTP.instances[0].sent[0][2])
+
+    def test_anexa_planilha(self):
+        self._caminho = self._arquivo()
+        msg = self._mensagem()
+        self.assertEqual(msg.get_content_type(), "multipart/mixed")
+        anexos = [p for p in msg.walk() if p.get_filename()]
+        self.assertEqual(len(anexos), 1)
+        anexo = anexos[0]
+        self.assertEqual(anexo.get_filename(), "vagas_da_semana.xlsx")
+        self.assertEqual(anexo.get_payload(decode=True), b"PK\x03\x04planilha")
+        self.assertEqual(anexo.get_content_type(), notifier.XLSX_CONTENT_TYPE)
+
+    def test_anexo_nao_esconde_o_resumo(self):
+        self._caminho = self._arquivo()
+        msg = self._mensagem()
+        self.assertTrue(any(p.get_content_subtype() == "plain" for p in msg.walk()))
+        self.assertTrue(any(p.get_content_subtype() == "html" for p in msg.walk()))
+
+    def test_arquivo_inexistente_envia_so_o_resumo(self):
+        self._caminho = os.path.join(self.tmp, "nao_existe.xlsx")
+        msg = self._mensagem()
+        self.assertEqual(msg.get_content_type(), "multipart/alternative")
+        self.assertEqual([p for p in msg.walk() if p.get_filename()], [])
+
+    def test_arquivo_grande_demais_e_ignorado(self):
+        self._caminho = self._arquivo(conteudo=b"x" * 20)
+        with mock.patch.object(notifier, "MAX_ATTACHMENT_BYTES", 10):
+            msg = self._mensagem()
+        self.assertEqual([p for p in msg.walk() if p.get_filename()], [])
 
 
 if __name__ == "__main__":

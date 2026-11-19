@@ -205,19 +205,111 @@ escalar mídia paga.
 | Incidente de privacidade | Baixa | Alto | Criptografia, RLS, minimização, auditoria |
 | Dependência de uma fonte | Alta | Médio | Mínimo de 3 fontes por vertical |
 
-## 13. Recomendação final
+## 13. Variante “Excel-first generalista” (avaliação específica)
+
+Pergunta justa: por que não vender exatamente o formato atual — **planilha com
+os links filtrados** — para **qualquer profissão**, já que o coletor já lida
+com timeout, retry e bloqueio?
+
+**Resposta curta: é a melhor forma de MVP.** O formato não é o problema; o que
+muda de “ferramenta local” para “SaaS” é operação, custo e licença de dados.
+
+### Por que funciona
+- **Zero atrito**: o usuário já vive em Excel/WhatsApp; não precisa aprender
+  dashboard.
+- **Custo de construção baixo**: não há web app — só formulário, agendador,
+  worker e e-mail com anexo (já implementado em `notifier`).
+- **Generalista de verdade**: o motor é agnóstico de profissão; o que muda é o
+  perfil (`termos_busca`, `termos_fortes`, `cidades`, senioridade). Os presets
+  de dados e enfermagem provam isso.
+- **Entrega recorrente**: planilha diária/semanal + alerta = assinatura natural.
+- **Feedback embutido**: coluna “Essa vaga é para mim?” na planilha alimenta a
+  precisão (36% → 88% com o modo estrito).
+
+### Arquitetura mínima (1–2 pessoas)
+```
+Landing + checkout (Stripe/Pix)
+        │
+Formulário de perfil (profissão, termos, cidades, remoto, nível)
+        │
+Agendador (cron) ── Fila ── Worker (jobspy + filtros atuais)
+        │                         │
+        │                         ├─ dedupe global + por usuário
+        │                         ├─ xlsx por usuário (export_xlsx)
+        │                         └─ e-mail com anexo (notifier)
+        └─ Postgres (perfis, histórico, supressão de já enviadas)
+```
+- 1 worker pequeno atende dezenas/centenas de perfis/dia se as consultas forem
+  agrupadas por termo+local (cache compartilhado, não 1 busca por usuário).
+- Limite por plano (ex.: 1 atualização/dia, 50 vagas novas) controla custo.
+
+### Custos e preço (estimativas)
+| Item | Custo/mês por 100 assinantes |
+|---|---|
+| Servidor + Postgres + worker | R$ 80–200 |
+| E-mail transacional | R$ 20–60 |
+| Proxies (se necessários) | R$ 300–1.500 (o maior risco) |
+| LLM (opcional, cartas) | R$ 50–300 |
+| **Total** | **R$ 450–2.060** |
+
+A R$ 29/mês × 100 = R$ 2.900 de receita: margem confortável **sem** proxies
+caros; apertada **com** scraping agressivo. Preço sugerido: **R$ 29–39/mês**
+por perfil, R$ 69 para 3 perfis, anual com 2 meses grátis.
+
+### O que “contornar bloqueios” resolve — e o que não resolve
+- **Resolve** disponibilidade: retry, jitter, backoff, circuit breaker, rodízio
+  de fontes e cache reduzem falhas e bans **por sessão**.
+- **Não resolve** permissão: os termos de uso de Indeed/LinkedIn/Glassdoor
+  restringem coleta automatizada. Um usuário local é uma coisa; um SaaS
+  central fazendo milhares de consultas em nome de terceiros é outra —
+  aumenta exposição contratual, risco de bloqueio em massa e custo de proxy.
+- **Não resolve** qualidade: cada profissão tem jargão e falsos positivos
+  próprios; generalizar exige presets + feedback, não só scraping.
+
+### Estratégia de fontes para generalizar com segurança
+1. **APIs/feeds públicos** por nicho e por ATS (Greenhouse, Lever, Ashby,
+   Workable, RemoteOK, Remotive, Arbeitnow, Jobicy): cobertura legal e estável.
+2. **Parcerias/licença** com portais verticais (saúde, indústria, educação).
+3. **Sessão do próprio usuário** (“conecte sua conta”) para fontes que exigem
+   login, mantendo a coleta sob o consentimento e a conta dele.
+4. **Scraping direto** apenas onde permitido/robots-friendly, com limite,
+   identificação e política de remoção.
+5. LinkedIn/Indeed: somente com autorização formal ou dados licenciados.
+
+### Plano de 90 dias para essa variante
+- **Semanas 1–3**: formulário + checkout + worker agendado + e-mail com xlsx
+  (o núcleo já existe) e 3 presets generalistas (dados, enfermagem, vendas).
+- **Semanas 4–6**: 3 fontes legais, dedupe “já enviadas”, página de privacidade
+  e exclusão de conta; medir precisão@20 por profissão.
+- **Semanas 7–10**: 50 usuários beta pagantes, feedback na planilha, ajuste de
+  presets; WhatsApp/Telegram como canal opcional.
+- **Semanas 11–13**: decidir se vale web app (só se o feedback pedir). Até lá,
+  Excel + e-mail é suficiente.
+
+### Veredito desta variante
+**Sim, é o caminho mais racional para começar** — desde que o produto seja
+vendido como **curadoria entregue em Excel**, com fontes legais e limite de
+uso, e não como “scraping ilimitado de LinkedIn/Indeed”. O diferencial
+continua sendo precisão + recorrência + confiança, não o volume bruto.
+
+## 14. Recomendação final
 
 1. **Não** lançar como “scraper de LinkedIn/Indeed por assinatura”. É a versão
    mais frágil jurídica e operacionalmente.
-2. **Lançar como assistente de candidatura vertical**, começando por
-   enfermagem (Grande BH/DF) **e** dados júnior (Brasília/DF + remoto), com
-   fontes legais e o motor de filtros já validado.
-3. **Cobrar por curadoria e fluxo** (precisão, alerta, kanban, currículo),
+2. **Começar pela variante Excel-first generalista** (§13): formulário +
+   agendador + e-mail com planilha anexada, 3–5 presets de profissão e fontes
+   legais. É o menor custo de construção e o formato que o usuário já quer.
+3. **Verticalizar a curadoria** (enfermagem Grande BH/DF, dados júnior
+   Brasília/DF + remoto, vendas etc.) sem verticalizar a infraestrutura: o
+   mesmo motor, presets e feedback por profissão.
+4. **Evoluir para web/kanban** só quando o uso pedir; até lá, Excel + e-mail
+   resolve e reduz custo.
+5. **Cobrar por curadoria e fluxo** (precisão, alerta, kanban, currículo),
    não por acesso à vaga.
-4. **B2C freemium + B2B coach/escola** como motor de receita; o B2B paga a
+6. **B2C freemium + B2B coach/escola** como motor de receita; o B2B paga a
    infra e reduz o risco de churn.
-5. **Manter o desktop local-first** como plano “Private” e prova de confiança.
-6. **Medir precisão@20 desde o dia 1** e usá-la como promessa comercial: “não
+7. **Manter o desktop local-first** como plano “Private” e prova de confiança.
+8. **Medir precisão@20 desde o dia 1** e usá-la como promessa comercial: “não
    te mostramos 200 vagas; mostramos as 20 certas e explicamos por quê.”
 
 Em resumo: o ativo não é o scraper — é o **motor de decisão** que o teste real
